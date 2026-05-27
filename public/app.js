@@ -139,6 +139,9 @@ async function toggleAdmin() {
         const defaultTasksBtn = document.getElementById('defaultTasksBtn');
         if (defaultTasksBtn) defaultTasksBtn.remove();
         
+        const updateIndexBtn = document.getElementById('updateIndexBtn');
+        if (updateIndexBtn) updateIndexBtn.remove();
+        
         await customAlert('Logged out. Read-only mode enabled.');
     } else {
         const pwd = await customPrompt('Enter Admin Password:');
@@ -158,12 +161,70 @@ async function toggleAdmin() {
                 document.getElementById('adminPanel').appendChild(btn);
             }
             
+            if (!document.getElementById('updateIndexBtn')) {
+                const btnUpdate = document.createElement('button');
+                btnUpdate.id = 'updateIndexBtn';
+                btnUpdate.className = 'modal-btn modal-btn-danger';
+                btnUpdate.innerText = 'Update index.html';
+                btnUpdate.style.marginTop = '20px';
+                btnUpdate.onclick = promptUpdateIndexHtml;
+                document.querySelector('.container').appendChild(btnUpdate);
+            }
+            
             await customAlert('Admin mode enabled.');
         } else if (pwd !== null) {
             await customAlert('Incorrect password.');
         }
     }
     loadRoster();
+}
+
+async function promptUpdateIndexHtml() {
+    if (!isAdmin) return;
+    
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.html';
+    fileInput.style.display = 'none';
+    
+    fileInput.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        const pwd = await customPrompt(`DANGER: Enter Admin Password to confirm updating index.html with "${file.name}":`);
+        if (pwd !== 'admin') {
+            if (pwd !== null) await customAlert('Incorrect password.');
+            return;
+        }
+        
+        if (!await customConfirm(`Are you sure you want to overwrite index.html with "${file.name}"? This could break the app.`)) {
+            return;
+        }
+        
+        const formData = new FormData();
+        formData.append('indexfile', file);
+        
+        try {
+            const response = await fetch('/api/admin/update-index', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+            if (result.success) {
+                await customAlert('index.html successfully updated! The page will now reload.');
+                window.location.reload();
+            } else {
+                await customAlert(result.error || 'Failed to update index.html.');
+            }
+        } catch (err) {
+            console.error(err);
+            await customAlert('Error uploading index.html.');
+        }
+    };
+    
+    document.body.appendChild(fileInput);
+    fileInput.click();
+    document.body.removeChild(fileInput);
 }
 
 // --- CUSTOM MODAL ENGINE ---

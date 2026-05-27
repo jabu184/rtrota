@@ -3,6 +3,7 @@ const multer = require('multer');
 const Database = require('better-sqlite3');
 const XLSX = require('xlsx');
 const fs = require('fs');
+const path = require('path');
 
 if (!fs.existsSync('uploads')) {
     fs.mkdirSync('uploads', { recursive: true });
@@ -14,6 +15,22 @@ let db = new Database('database.db');
 
 app.use(express.json());
 app.use(express.static('public'));
+
+// Configure multer for index.html replacement
+const indexStorage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, path.join(__dirname, 'public'));
+    },
+    filename: function (req, file, cb) {
+        cb(null, 'index.html');
+    }
+});
+const uploadIndex = multer({ storage: indexStorage });
+
+app.post('/api/admin/update-index', uploadIndex.single('indexfile'), (req, res) => {
+    if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded.' });
+    res.json({ success: true });
+});
 
 function initDatabase() {
 // --- DATABASE LAYER ---
