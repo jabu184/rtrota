@@ -3,6 +3,7 @@ let isLightTheme = false;
 let isAdmin = false;
 let currentRoster = 'QA';
 let isDailyTasksHidden = true;
+let isStatsViewActive = false;
 
 // --- PREVIEW STATE ---
 let previewState = {
@@ -117,7 +118,13 @@ function switchRoster(roster) {
     document.getElementById('qaRosterBtn').classList.toggle('active', roster === 'QA');
     document.getElementById('planningRosterBtn').classList.toggle('active', roster === 'Planning');
     document.title = `Radiotherapy ${roster} Section - Clinical Rota Grid`;
-    loadRoster();
+    if (isStatsViewActive) {
+        const tr = document.getElementById('statsTimeRange');
+        openStatistics(tr ? tr.value : 'all');
+        loadRoster();
+    } else {
+        loadRoster();
+    }
 }
 window.switchRoster = switchRoster;
 
@@ -131,6 +138,7 @@ function toggleTheme() {
 async function toggleAdmin() {
     if(isAdmin) {
         isAdmin = false;
+        isStatsViewActive = false;
         document.body.classList.add('read-only');
         document.getElementById('adminBtn').innerText = 'Admin Login';
         document.getElementById('adminBtn').style.background = '#e53e3e';
@@ -141,6 +149,11 @@ async function toggleAdmin() {
         
         const updateIndexBtn = document.getElementById('updateIndexBtn');
         if (updateIndexBtn) updateIndexBtn.remove();
+
+        const statsDashboard = document.getElementById('statsDashboard');
+        if (statsDashboard) statsDashboard.style.display = 'none';
+        const rotaDashboard = document.getElementById('rotaDashboard');
+        if (rotaDashboard) rotaDashboard.style.display = 'block';
         
         await customAlert('Logged out. Read-only mode enabled.');
     } else {
@@ -527,10 +540,11 @@ async function openDefaultTasksManager() {
     overlay.style.display = 'flex';
 }
 
-async function openStatistics() {
+async function openStatistics(timeRange = 'all') {
     if (!isAdmin) return;
+    isStatsViewActive = true;
     try {
-        const res = await fetch('/api/statistics');
+        const res = await fetch(`/api/statistics?rosterType=${currentRoster}&timeRange=${timeRange}`);
         const stats = await res.json();
         
         if (!stats.success) {
@@ -538,40 +552,199 @@ async function openStatistics() {
             return;
         }
 
-        let msg = `📊 ROSTER STATISTICS\n\n`;
-        
-        msg += `--- Staff Statuses ---\n`;
-        if (stats.statuses.length === 0) msg += `None recorded.\n`;
-        stats.statuses.forEach(s => msg += `• ${s.status}: ${s.count} days\n`);
-        msg += `\n`;
-        
-        msg += `--- Task Allocation (Top 10) ---\n`;
-        if (stats.taskAllocation.length === 0) msg += `No tasks assigned.\n`;
-        stats.taskAllocation.forEach(t => msg += `• ${t.name}: ${t.count} tasks\n`);
-        msg += `\n`;
+        const dashboard = document.getElementById('rotaDashboard');
+        let statsContainer = document.getElementById('statsDashboard');
+        if (!statsContainer) {
+            statsContainer = document.createElement('div');
+            statsContainer.id = 'statsDashboard';
+            dashboard.parentNode.insertBefore(statsContainer, dashboard.nextSibling);
+        }
 
-        msg += `--- Tasks Over Time (Last 6 Months) ---\n`;
-        if (stats.tasksOverTime.length === 0) msg += `No tasks recorded.\n`;
-        stats.tasksOverTime.forEach(t => {
-            const monthLabel = t.month ? t.month : 'Unknown';
-            msg += `• ${monthLabel}: ${t.count} tasks\n`;
+        dashboard.style.display = 'none';
+        statsContainer.style.display = 'block';
+
+        statsContainer.innerHTML = `
+            <div class="control-panel" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-direction: row;">
+                <h2 style="color: #63b3ed; margin: 0;">${currentRoster} Roster Statistics</h2>
+                <div>
+                    <label style="margin-right: 10px;">User Breakdown Time Period:</label>
+                    <select id="statsTimeRange" onchange="openStatistics(this.value)" style="margin-right: 15px;">
+                        <option value="1" ${timeRange === '1' ? 'selected' : ''}>Last 1 Month</option>
+                        <option value="3" ${timeRange === '3' ? 'selected' : ''}>Last 3 Months</option>
+                        <option value="6" ${timeRange === '6' ? 'selected' : ''}>Last 6 Months</option>
+                        <option value="12" ${timeRange === '12' ? 'selected' : ''}>Last 12 Months</option>
+                        <option value="all" ${timeRange === 'all' ? 'selected' : ''}>All Data</option>
+                    </select>
+                    <button class="modal-btn modal-btn-primary" onclick="closeStatistics()">Back to Roster</button>
+                </div>
+            </div>
+            
+            <div class="control-panel" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; min-width: 0;">
+                <div style="background: #fff; border-radius: 4px; padding: 10px; min-width: 0; position: relative; height: 350px;"><canvas id="statusChart"></canvas></div>
+                <div style="background: #fff; border-radius: 4px; padding: 10px; min-width: 0; position: relative; height: 350px;"><canvas id="rosterHoursChart"></canvas></div>
+            </div>
+            
+            <h3 style="color: #63b3ed; margin-bottom: 10px;">Individual User Task Breakdown</h3>
+            <div id="userTasksContainer" class="control-panel" style="display: block; width: 100%; background: #fff; border-radius: 4px; padding: 10px; min-width: 0; box-sizing: border-box;">
+            </div>
+            
+            <div class="control-panel" style="margin-top: 20px;">
+                <div id="statsTextContent" style="color: inherit; font-size: 14px;"></div>
+            </div>
+        `;
+        
+        let msg = `<strong>--- Missing Assignments ---</strong><br>`;
+        msg += `• Manually Added Missing: ${stats.manualMissing}<br>`;
+        msg += `• Ignored Missing Slots: ${stats.totalIgnored}<br><br>`;
+        msg += `<strong>--- Task Allocation (Top 10 by Count) ---</strong><br>`;
+        if (stats.taskAllocation.length === 0) msg += `No tasks assigned.<br>`;
+        stats.taskAllocation.forEach(t => msg += `• ${t.name}: ${t.count} tasks<br>`);
+        document.getElementById('statsTextContent').innerHTML = msg;
+
+        if (window.taskHoursChartInstance) window.taskHoursChartInstance.destroy();
+        if (window.rosterHoursChartInstance) window.rosterHoursChartInstance.destroy();
+        if (window.statusChartInstance) window.statusChartInstance.destroy();
+
+        const lineColors = [
+            'rgba(255, 99, 132, 1)', 'rgba(54, 162, 235, 1)', 'rgba(255, 206, 86, 1)',
+            'rgba(75, 192, 192, 1)', 'rgba(153, 102, 255, 1)', 'rgba(255, 159, 64, 1)',
+            'rgba(199, 199, 199, 1)', 'rgba(83, 102, 255, 1)', 'rgba(40, 159, 64, 1)',
+            'rgba(210, 199, 99, 1)'
+        ];
+
+        const top10Tasks = stats.taskHours.slice(0, 10).map(t => t.task);
+        const taskDatasets = top10Tasks.map((taskName, i) => {
+            return {
+                label: taskName,
+                data: stats.rosterHoursOverTime.map(d => {
+                    const week = d.week;
+                    return (stats.weeklyTaskStats && stats.weeklyTaskStats[week] && stats.weeklyTaskStats[week][taskName]) ? stats.weeklyTaskStats[week][taskName] : 0;
+                }),
+                borderColor: lineColors[i % lineColors.length],
+                backgroundColor: lineColors[i % lineColors.length].replace('1)', '0.2)'),
+                borderWidth: 2,
+                fill: false,
+                tension: 0.3
+            };
         });
-        msg += `\n`;
 
-        msg += `--- Missing Assignments ---\n`;
-        msg += `• Manually Added Missing: ${stats.manualMissing}\n`;
-        msg += `• Ignored Missing Slots: ${stats.totalIgnored}\n\n`;
+        const rosterCtx = document.getElementById('rosterHoursChart').getContext('2d');
+        window.rosterHoursChartInstance = new Chart(rosterCtx, {
+            type: 'line',
+            data: {
+                labels: stats.rosterHoursOverTime.map(d => d.week),
+                datasets: [{
+                    label: 'Total Overall Roster Hours',
+                    data: stats.rosterHoursOverTime.map(d => d.hours),
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderWidth: 4,
+                    fill: true,
+                    tension: 0.3
+                }, ...taskDatasets]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Total Roster Hours & Top 10 Tasks (Weekly)' } }, scales: { y: { beginAtZero: true } } }
+        });
 
-        msg += `--- Shift Distribution (Top 10) ---\n`;
-        if (stats.roleCounts.length === 0) msg += `No shifts recorded.\n`;
-        stats.roleCounts.forEach(r => msg += `• ${r.shift_title}: ${r.count} shifts\n`);
+        const statusCtx = document.getElementById('statusChart').getContext('2d');
+        window.statusChartInstance = new Chart(statusCtx, {
+            type: 'bar',
+            data: {
+                labels: stats.statusOverTime.map(d => d.week),
+                datasets: [
+                    { label: 'WFH', data: stats.statusOverTime.map(d => d.wfh), backgroundColor: 'rgba(153, 102, 255, 0.7)' },
+                    { label: 'Sick', data: stats.statusOverTime.map(d => d.sick), backgroundColor: 'rgba(255, 99, 132, 0.7)' },
+                    { label: 'Unavailable', data: stats.statusOverTime.map(d => d.unavailable), backgroundColor: 'rgba(201, 203, 207, 0.7)' }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'WFH, Sickness, & Unavailable Days (Weekly)' } }, scales: { x: { stacked: true }, y: { beginAtZero: true, stacked: true } } }
+        });
 
-        await customAlert(msg);
+        const userContainer = document.getElementById('userTasksContainer');
+        window.userChartInstances = window.userChartInstances || [];
+        window.userChartInstances.forEach(c => c.destroy());
+        window.userChartInstances = [];
+
+        if (stats.userTasks.length === 0) {
+            userContainer.innerHTML = '<div style="color: #cbd5e0; padding: 10px; background: transparent;">No task data found for the selected period.</div>';
+            userContainer.style.background = 'transparent';
+        } else {
+            userContainer.innerHTML = '<div style="position: relative; width: 100%;"><canvas id="userStackedChart"></canvas></div>';
+            
+            const allUniqueTasks = new Set();
+            stats.userTasks.forEach(u => u.tasks.forEach(t => allUniqueTasks.add(t.task)));
+            
+            const tasksList = Array.from(allUniqueTasks).filter(t => t !== 'Unassigned');
+            tasksList.push('Unassigned');
+
+            const colors = [
+                'rgba(54, 162, 235, 0.7)', 'rgba(255, 99, 132, 0.7)', 'rgba(75, 192, 192, 0.7)',
+                'rgba(255, 159, 64, 0.7)', 'rgba(153, 102, 255, 0.7)', 'rgba(255, 205, 86, 0.7)',
+                'rgba(201, 203, 207, 0.7)', 'rgba(255, 99, 255, 0.7)', 'rgba(99, 255, 132, 0.7)'
+            ];
+
+            const datasets = tasksList.map((taskName, i) => {
+                return {
+                    label: taskName,
+                    data: stats.userTasks.map(u => {
+                        const t = u.tasks.find(x => x.task === taskName);
+                        const rawHours = t ? t.hours : 0;
+                        return u.totalHours > 0 ? (rawHours / u.totalHours) * 100 : 0;
+                    }),
+                    backgroundColor: taskName === 'Unassigned' ? 'rgba(200, 200, 200, 0.5)' : colors[i % colors.length]
+                };
+            });
+
+            const ctx = document.getElementById('userStackedChart').getContext('2d');
+            document.getElementById('userStackedChart').parentElement.style.height = `${Math.max(300, stats.userTasks.length * 30)}px`;
+
+            const chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: stats.userTasks.map(u => u.user),
+                    datasets: datasets
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { 
+                        title: { display: true, text: 'Normalized Task Distribution per User (%)' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const userIdx = context.dataIndex;
+                                    const u = stats.userTasks[userIdx];
+                                    const taskName = context.dataset.label;
+                                    const t = u.tasks.find(x => x.task === taskName);
+                                    const rawHours = t ? t.hours : 0;
+                                    const percentage = context.raw.toFixed(1);
+                                    return `${taskName}: ${percentage}% (${rawHours.toFixed(1)} hrs)`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { stacked: true, max: 100, title: { display: true, text: 'Percentage of Assigned Time' } },
+                        y: { stacked: true }
+                    }
+                }
+            });
+            window.userChartInstances.push(chart);
+        }
+
     } catch (err) {
         console.error(err);
         await customAlert('Error loading statistics.');
     }
 }
+
+window.closeStatistics = function() {
+    isStatsViewActive = false;
+    const statsContainer = document.getElementById('statsDashboard');
+    if (statsContainer) statsContainer.style.display = 'none';
+    document.getElementById('rotaDashboard').style.display = 'block';
+};
 
 function exportDatabase() {
     if (!isAdmin) return;
@@ -894,6 +1067,7 @@ async function clearWeeklyTasks() {
     scopeSelect.style.marginBottom = '15px';
     scopeSelect.innerHTML = `
         <option value="week">Current Week Only (${start})</option>
+        <option value="future">Current Week & Future Dates (${start} onwards)</option>
         <option value="all">All Dates</option>
     `;
     inputContainer.appendChild(scopeSelect);
@@ -956,6 +1130,13 @@ function setDatesNext4Weeks() {
 }
 
 async function loadRoster() {
+    if (!isStatsViewActive) {
+        const statsContainer = document.getElementById('statsDashboard');
+        if (statsContainer) statsContainer.style.display = 'none';
+        const rotaDashboard = document.getElementById('rotaDashboard');
+        if (rotaDashboard) rotaDashboard.style.display = 'block';
+    }
+
     const rawStart = document.getElementById('startDate').value || new Date().toISOString().split('T')[0];
     const start = getMonday(rawStart);
     document.getElementById('startDate').value = start;
@@ -1418,8 +1599,8 @@ async function addTask(date) {
     
     // Dynamically choose color 1 through 10 based on existing tasks for this day so they cycle through correctly
     const existingCount = document.querySelectorAll(`.grid-cell[data-date="${date}"] .task-chip`).length;
-    const colors = ['color-1', 'color-2', 'color-3', 'color-4', 'color-5', 'color-6', 'color-7', 'color-8', 'color-9', 'color-10'];
-    const nextColor = colors[existingCount % 10];
+    const colors = ['color-1', 'color-2', 'color-3', 'color-4', 'color-5', 'color-6', 'color-7', 'color-8', 'color-9', 'color-10', 'color-11'];
+    const nextColor = colors[existingCount % 11];
     
     const groupId = durationDays > 1 ? Date.now().toString() + Math.random().toString(36).substring(2, 7) : null;
     
@@ -1501,6 +1682,8 @@ function allowDrop(ev) {
     const dropzone = ev.target.closest('.dropzone');
     const shiftChip = ev.target.closest('.allocation-chip');
     const emptyChip = ev.target.closest('.empty-chip');
+    const tasksCell = ev.target.closest('.tasks-cell');
+    const taskChip = ev.target.closest('.task-chip[data-task-type="daily"]');
     
     if (shiftChip || emptyChip) {
         const targetChip = shiftChip || emptyChip;
@@ -1529,6 +1712,12 @@ function allowDrop(ev) {
         } else {
             targetChip.classList.add('drag-over-shift');
         }
+    } else if (tasksCell) {
+        if (taskChip) {
+            taskChip.classList.add('drag-over-shift');
+        } else {
+            tasksCell.classList.add('drag-over');
+        }
     } else if (dropzone) {
         dropzone.classList.add('drag-over');
     }
@@ -1538,12 +1727,18 @@ function dragLeave(ev) {
     const dropzone = ev.target.closest('.dropzone');
     const targetShiftChip = ev.target.closest('.allocation-chip');
     const emptyChip = ev.target.closest('.empty-chip');
+    const tasksCell = ev.target.closest('.tasks-cell');
+    const taskChip = ev.target.closest('.task-chip[data-task-type="daily"]');
     
     if (dropzone && (!ev.relatedTarget || !dropzone.contains(ev.relatedTarget))) {
         dropzone.classList.remove('drag-over');
     }
+    if (tasksCell && (!ev.relatedTarget || !tasksCell.contains(ev.relatedTarget))) {
+        tasksCell.classList.remove('drag-over');
+    }
     if ((targetShiftChip && (!ev.relatedTarget || !targetShiftChip.contains(ev.relatedTarget))) || 
-        (emptyChip && (!ev.relatedTarget || !emptyChip.contains(ev.relatedTarget)))) {
+        (emptyChip && (!ev.relatedTarget || !emptyChip.contains(ev.relatedTarget))) ||
+        (taskChip && (!ev.relatedTarget || !taskChip.contains(ev.relatedTarget)))) {
         document.querySelectorAll('.drag-over-shift').forEach(el => el.classList.remove('drag-over-shift'));
     }
 }
@@ -1554,8 +1749,11 @@ async function drop(ev) {
     const dropzone = ev.target.closest('.dropzone');
     const targetShiftChip = ev.target.closest('.allocation-chip');
     const emptyChip = ev.target.closest('.empty-chip');
+    const tasksCell = ev.target.closest('.tasks-cell');
+    const targetTaskChip = ev.target.closest('.task-chip[data-task-type="daily"]');
     
     if (dropzone) dropzone.classList.remove('drag-over');
+    if (tasksCell) tasksCell.classList.remove('drag-over');
     document.querySelectorAll('.drag-over-shift').forEach(el => el.classList.remove('drag-over-shift'));
     
     let data;
@@ -1642,6 +1840,23 @@ async function drop(ev) {
             }
         }
         return;
+    } else if (data.type === 'daily_task' && tasksCell && !targetShiftChip && !emptyChip) {
+        const draggedTaskId = data.task_id;
+        const draggedChip = document.querySelector(`.task-chip[data-task-id='${draggedTaskId}']`);
+        
+        // This block now only handles moving a task to a DIFFERENT day's task list. Reordering is done via RMC.
+        if (draggedChip && !tasksCell.isSameNode(draggedChip.parentElement)) {
+            const newDate = tasksCell.getAttribute('data-date');
+            try {
+                const response = await fetch('/api/tasks/move', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task_id: draggedTaskId, new_date: newDate })
+                });
+                if (response.ok) {
+                    loadRoster();
+                } else await customAlert('Failed to move task.');
+            } catch (e) { await customAlert('Error moving task.'); }
+            return;
+        }
     } else if ((data.type === 'daily_task' || data.type === 'assigned_task') && (targetShiftChip || emptyChip)) {
         if (targetShiftChip) {
             const targetEntryId = targetShiftChip.getAttribute('data-entry-id');
@@ -2014,7 +2229,15 @@ document.addEventListener('contextmenu', (e) => {
         const isAssignedTask = taskChip && taskChip.classList.contains('assigned-task-tag');
         const cmTaskItems = document.querySelectorAll('.cm-task');
         cmTaskItems.forEach(el => {
-            if (!taskChip) {
+            const isDaily = taskChip && !isAssignedTask;
+            const isMoveItem = el.id.startsWith('cm-task-move-');
+
+            if (isMoveItem) {
+                el.style.display = isDaily ? 'block' : 'none';
+                if (el.previousElementSibling && el.previousElementSibling.classList.contains('cm-divider')) {
+                    el.previousElementSibling.style.display = isDaily ? 'block' : 'none';
+                }
+            } else if (!taskChip) {
                 el.style.display = 'none';
             } else if (isAssignedTask && el.id !== 'cm-task-am' && el.id !== 'cm-task-pm' && el.id !== 'cm-task-allday') {
                 el.style.display = 'none';
@@ -2089,6 +2312,7 @@ document.addEventListener('contextmenu', (e) => {
             document.getElementById('cm-task-color8').innerHTML = (currentColor === 'color-8' ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'Yellow';
             document.getElementById('cm-task-color9').innerHTML = (currentColor === 'color-9' ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'Cyan';
             document.getElementById('cm-task-color10').innerHTML = (currentColor === 'color-10' ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'Gray';
+            document.getElementById('cm-task-color11').innerHTML = (currentColor === 'color-11' ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'Lime';
         }
 
     } else {
@@ -2462,6 +2686,41 @@ async function handleCmTaskDuration(duration) {
     }
 }
 
+async function handleCmTaskMove(direction) {
+    if (cmTarget.taskChip) {
+        const taskId = cmTarget.taskChip.getAttribute('data-task-id');
+        const taskType = cmTarget.taskChip.getAttribute('data-task-type');
+        const groupId = cmTarget.taskChip.getAttribute('data-task-group-id');
+        
+        let mode = 'single';
+        if (taskType === 'daily' && groupId && groupId !== 'null' && groupId !== '') {
+            const choice = await showModal({
+                title: 'Reorder Linked Task',
+                message: 'This task is part of a multi-day linked series.\nDo you want to apply this reordering to all linked tasks, or just for this day?',
+                buttons: [
+                    { text: 'Apply to All Linked', value: 'all', class: 'modal-btn-primary' },
+                    { text: 'This Day Only', value: 'single', class: 'modal-btn-secondary' },
+                    { text: 'Cancel', value: null, class: 'modal-btn-secondary' }
+                ]
+            });
+            if (!choice) return;
+            mode = choice;
+        }
+        
+        try {
+            const response = await fetch('/api/tasks/move-vertical', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ taskId, direction, mode })
+            });
+            if (response.ok) loadRoster();
+            else await customAlert('Failed to reorder task.');
+        } catch (err) {
+            await customAlert('An error occurred while reordering the task.');
+        }
+    }
+}
+
 // --- HIGHLIGHT LINKED TASKS & USER SHIFTS ON HOVER ---
 document.addEventListener('mouseover', (e) => {
     const taskChip = e.target.closest('.task-chip, .assigned-task-tag');
@@ -2539,6 +2798,10 @@ dynamicStyle.innerHTML = `
         outline-offset: 2px;
         opacity: 0.8;
     }
+    .tasks-cell.drag-over {
+        box-shadow: inset 0 0 0 2px #ecc94b;
+        background-color: #4a5568 !important;
+    }
     .dt-header.collapsed {
         grid-column: span 8;
     }
@@ -2565,52 +2828,6 @@ const socket = typeof io !== 'undefined' ? io() : null;
 
 if (socket) {
     socket.on('roster_updated', () => {
-        if (isUserBusy()) {
-            showLiveUpdateBanner();
-        } else {
-            // If the user isn't interacting, just reload the grid seamlessly
-            loadRoster();
-        }
+        loadRoster();
     });
 }
-
-function isUserBusy() {
-    if (previewState.active) return true;
-    const customModal = document.getElementById('customModal');
-    if (customModal && customModal.style.display === 'flex') return true;
-    const staffModal = document.getElementById('staffModal');
-    if (staffModal && staffModal.style.display === 'flex') return true;
-    const ctxMenu = document.getElementById('contextMenu');
-    if (ctxMenu && ctxMenu.style.display === 'block') return true;
-    if (document.querySelectorAll('.drag-over-shift, .drag-over, .selected-shift').length > 0) return true;
-    return false;
-}
-
-function showLiveUpdateBanner() {
-    let banner = document.getElementById('liveUpdateBanner');
-    if (!banner) {
-        banner = document.createElement('div');
-        banner.id = 'liveUpdateBanner';
-        banner.className = 'preview-banner';
-        banner.style.borderColor = '#3182ce';
-        banner.style.backgroundColor = '#ebf8ff';
-        banner.style.color = '#2b6cb0';
-        banner.innerHTML = `
-            <div>
-                <span>🔄 <strong>Real-time Update Available</strong> - A colleague has made changes.</span>
-            </div>
-            <div>
-                <button class="modal-btn modal-btn-primary" onclick="applyLiveUpdate()">Refresh Now</button>
-            </div>
-        `;
-        const dashboard = document.getElementById('rotaDashboard');
-        dashboard.parentNode.insertBefore(banner, dashboard);
-    }
-}
-
-window.applyLiveUpdate = function() {
-    const banner = document.getElementById('liveUpdateBanner');
-    if (banner) banner.remove();
-    clearSelection();
-    loadRoster();
-};

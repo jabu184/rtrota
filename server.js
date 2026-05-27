@@ -164,6 +164,7 @@ try { db.exec("ALTER TABLE shift_tasks ADD COLUMN group_id TEXT"); } catch(e) {}
 try { db.exec("ALTER TABLE roster_entries ADD COLUMN display_order INTEGER DEFAULT 0"); } catch(e) {}
 try { db.exec("ALTER TABLE staff ADD COLUMN default_task TEXT"); } catch(e) {}
 try { db.exec("ALTER TABLE roster_entries ADD COLUMN note TEXT"); } catch(e) {}
+try { db.exec("ALTER TABLE daily_tasks ADD COLUMN display_order INTEGER DEFAULT 0"); } catch(e) {}
 
 // --- FIX DANGLING FOREIGN KEYS ---
 try {
@@ -192,6 +193,32 @@ try {
 } catch (err) {
     console.error("FK fix error:", err);
 }
+
+    // --- AUTO-HEAL FRACTURED GROUP IDs ---
+    try {
+        const uniqueTaskNames = db.prepare(`
+            SELECT DISTINCT task_name, roster_type FROM (
+                SELECT task_name, roster_type FROM daily_tasks WHERE task_name IS NOT NULL
+                UNION
+                SELECT st.task_name, re.roster_type FROM shift_tasks st JOIN roster_entries re ON st.entry_id = re.id WHERE st.task_name IS NOT NULL
+            )
+        `).all();
+        db.transaction(() => {
+            const updateDaily = db.prepare("UPDATE daily_tasks SET group_id = ? WHERE task_name = ? AND roster_type IS ?");
+            const updateShift = db.prepare("UPDATE shift_tasks SET group_id = ? WHERE task_name = ? AND entry_id IN (SELECT id FROM roster_entries WHERE roster_type IS ?)");
+            
+            for (const t of uniqueTaskNames) {
+                const existing = db.prepare("SELECT group_id FROM daily_tasks WHERE task_name = ? AND roster_type IS ? AND group_id IS NOT NULL LIMIT 1").get(t.task_name, t.roster_type);
+                const unifiedGroupId = existing ? existing.group_id : Date.now().toString() + Math.random().toString(36).substring(2, 7);
+                
+                updateDaily.run(unifiedGroupId, t.task_name, t.roster_type);
+                updateShift.run(unifiedGroupId, t.task_name, t.roster_type);
+            }
+        })();
+        console.log("--> Fractured task links successfully synchronized.");
+    } catch (err) {
+        console.error("Task link healing error:", err);
+    }
 }
 
 initDatabase();
@@ -299,17 +326,28 @@ function autoGroupTasksBackend(rosterType = 'QA', startDate = null, endDate = nu
             tasks = db.prepare(`SELECT entry_id, task_name FROM shift_tasks WHERE entry_id IN (SELECT id FROM roster_entries WHERE roster_type = ?)`).all(rosterType);
         }
         
-        const taskMap = {};
+        const taskRanks = db.prepare('SELECT task_name, MIN(display_order) as rank FROM daily_tasks GROUP BY task_name').all();
+        const rankMap = {};
+        taskRanks.forEach(r => rankMap[r.task_name] = r.rank);
+
+        const taskAssignmentMap = {};
         tasks.forEach(t => {
-            if (!taskMap[t.entry_id]) taskMap[t.entry_id] = [];
-            taskMap[t.entry_id].push(t.task_name);
+            if (!taskAssignmentMap[t.entry_id]) taskAssignmentMap[t.entry_id] = [];
+            taskAssignmentMap[t.entry_id].push(t.task_name);
         });
         
         const grouped = {};
         entries.forEach(e => {
             const key = e.date + '|' + e.shift_title;
             if (!grouped[key]) grouped[key] = [];
-            e.taskStr = (taskMap[e.id] || []).sort().join(',');
+            e.assigned_tasks = taskAssignmentMap[e.id] || [];
+            e.assigned_tasks.sort((a, b) => {
+                const rankA = rankMap[a] !== undefined ? rankMap[a] : 999;
+                const rankB = rankMap[b] !== undefined ? rankMap[b] : 999;
+                if (rankA !== rankB) return rankA - rankB;
+                return a.localeCompare(b);
+            });
+            e.taskStr = e.assigned_tasks.join(',');
             grouped[key].push(e);
         });
         
@@ -776,34 +814,36 @@ app.get('/api/database/export/tasks', (req, res) => {
         const allUniqueTasks = tempDb.prepare(`
             WITH ranked_tasks AS (
                 SELECT
-                    date, task_name, duration, color, group_id, roster_type,
+                    id, date, task_name, duration, color, group_id, roster_type, display_order, priority,
                     ROW_NUMBER() OVER (
                         PARTITION BY date, task_name, roster_type
                         ORDER BY
+                            priority ASC,
                             CASE WHEN group_id IS NOT NULL THEN 0 ELSE 1 END,
                             CASE WHEN duration = 'All Day' THEN 0 ELSE 1 END,
                             id DESC
                     ) as rn
                 FROM (
-                    SELECT id, date, task_name, duration, color, group_id, roster_type FROM daily_tasks
+                    SELECT id, date, task_name, duration, color, group_id, roster_type, display_order, 1 as priority FROM daily_tasks
                     UNION ALL
-                    SELECT st.id, re.date, st.task_name, st.duration, st.color, st.group_id, re.roster_type
+                    SELECT st.id, re.date, st.task_name, st.duration, st.color, st.group_id, re.roster_type, 0 as display_order, 2 as priority
                     FROM shift_tasks st
                     JOIN roster_entries re ON st.entry_id = re.id
                 )
                 ${dateFilter}
             )
-            SELECT date, task_name, duration, color, group_id, roster_type
+            SELECT date, task_name, duration, color, group_id, roster_type, display_order
             FROM ranked_tasks
             WHERE rn = 1
+            ORDER BY date ASC, display_order ASC, priority ASC, id ASC
         `).all(...params);
 
         tempDb.exec('DELETE FROM daily_tasks;');
         
         if (allUniqueTasks.length > 0) {
-            const insertTask = tempDb.prepare(`INSERT INTO daily_tasks (date, task_name, duration, color, group_id, roster_type) VALUES (?, ?, ?, ?, ?, ?)`);
+            const insertTask = tempDb.prepare(`INSERT INTO daily_tasks (date, task_name, duration, color, group_id, roster_type, display_order) VALUES (?, ?, ?, ?, ?, ?, ?)`);
             allUniqueTasks.forEach(t => {
-                insertTask.run(t.date, t.task_name, t.duration, t.color, t.group_id, t.roster_type || rosterType);
+                insertTask.run(t.date, t.task_name, t.duration, t.color, t.group_id, t.roster_type || rosterType, t.display_order !== null ? t.display_order : 0);
             });
         }
 
@@ -887,10 +927,10 @@ app.post('/api/database/import', upload.single('database'), (req, res) => {
                 }
             }
 
-            const dailyTasks = uploadedDb.prepare('SELECT * FROM daily_tasks WHERE roster_type = ?').all(rosterType);
-            const insertDailyTask = db.prepare('INSERT INTO daily_tasks (date, task_name, duration, color, shift_title, group_id, roster_type) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            const dailyTasks = uploadedDb.prepare('SELECT * FROM daily_tasks WHERE roster_type = ? ORDER BY date ASC, display_order ASC, id ASC').all(rosterType);
+            const insertDailyTask = db.prepare('INSERT INTO daily_tasks (date, task_name, duration, color, shift_title, group_id, roster_type, display_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
             for (const dt of dailyTasks) {
-                insertDailyTask.run(dt.date, dt.task_name, dt.duration, dt.color, dt.shift_title, dt.group_id, dt.roster_type);
+                insertDailyTask.run(dt.date, dt.task_name, dt.duration, dt.color, dt.shift_title, dt.group_id, dt.roster_type, dt.display_order !== null ? dt.display_order : 0);
             }
 
             const metadata = uploadedDb.prepare('SELECT * FROM empty_shift_metadata WHERE roster_type = ?').all(rosterType);
@@ -916,10 +956,10 @@ app.post('/api/database/import/tasks', upload.single('database'), (req, res) => 
     
     try {
         const uploadedDb = new Database(req.file.path);
-        const tasksToImport = uploadedDb.prepare('SELECT * FROM daily_tasks').all();
+        const tasksToImport = uploadedDb.prepare('SELECT * FROM daily_tasks ORDER BY date ASC, display_order ASC, id ASC').all();
         
         if (tasksToImport.length > 0) {
-            const insertTask = db.prepare('INSERT INTO daily_tasks (date, task_name, duration, color, group_id, roster_type) VALUES (?, ?, ?, ?, ?, ?)');
+            const insertTask = db.prepare('INSERT INTO daily_tasks (date, task_name, duration, color, group_id, roster_type, display_order) VALUES (?, ?, ?, ?, ?, ?, ?)');
             
             let diffDays = 0;
             let numWeeks = 1;
@@ -953,8 +993,8 @@ app.post('/api/database/import/tasks', upload.single('database'), (req, res) => 
             }
             
             db.transaction(() => {
+                const groupMap = {}; // Maintain group ID links across all replicated weeks
                 for (let w = 0; w < numWeeks; w++) {
-                    const groupMap = {}; // Re-initialize group_id maps to keep links contained within their specific week
                     tasksToImport.forEach(t => {
                         const tDate = new Date(t.date + 'T12:00:00Z');
                         tDate.setUTCDate(tDate.getUTCDate() + diffDays + (w * 7));
@@ -968,7 +1008,7 @@ app.post('/api/database/import/tasks', upload.single('database'), (req, res) => 
                             newGroupId = groupMap[t.group_id];
                         }
                         
-                        insertTask.run(newDateStr, t.task_name, t.duration, t.color, newGroupId, rosterType);
+                        insertTask.run(newDateStr, t.task_name, t.duration, t.color, newGroupId, rosterType, t.display_order !== null ? t.display_order : 0);
                     });
                 }
             })();
@@ -1170,7 +1210,7 @@ app.post('/api/roster/auto-group-tasks', (req, res) => {
 // --- API: DAILY TASKS ---
 app.get('/api/tasks', (req, res) => {
     const { startDate, endDate, rosterType = 'QA' } = req.query;
-    const tasks = db.prepare(`SELECT * FROM daily_tasks WHERE roster_type = ? AND date BETWEEN ? AND ? ORDER BY date ASC`).all(rosterType, startDate, endDate);
+    const tasks = db.prepare(`SELECT * FROM daily_tasks WHERE roster_type = ? AND date BETWEEN ? AND ? ORDER BY date ASC, display_order ASC, id ASC`).all(rosterType, startDate, endDate);
     res.json(tasks);
 });
 
@@ -1181,6 +1221,50 @@ app.post('/api/tasks', (req, res) => {
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'Failed to add task.' });
+    }
+});
+
+app.post('/api/tasks/move-vertical', (req, res) => {
+    const { taskId, direction, mode } = req.body;
+    try {
+        const task = db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(taskId);
+        if (!task) return res.status(404).json({ error: 'Task not found.' });
+
+        let datesToUpdate = [task.date];
+        if (mode === 'all' && task.group_id) {
+            const linkedTasks = db.prepare('SELECT DISTINCT date FROM daily_tasks WHERE group_id = ?').all(task.group_id);
+            datesToUpdate = linkedTasks.map(t => t.date);
+        }
+
+        db.transaction(() => {
+            for (const date of datesToUpdate) {
+                const tasksOnDay = db.prepare('SELECT id FROM daily_tasks WHERE date = ? AND roster_type = ? ORDER BY display_order ASC, id ASC').all(date, task.roster_type);
+                const idsOnDay = tasksOnDay.map(t => t.id);
+                
+                const taskToMoveOnThisDay = db.prepare('SELECT id FROM daily_tasks WHERE date = ? AND task_name = ? AND roster_type = ?').get(date, task.task_name, task.roster_type);
+                if (!taskToMoveOnThisDay) continue;
+
+                const currentIndex = idsOnDay.indexOf(taskToMoveOnThisDay.id);
+                if (currentIndex === -1) continue;
+
+                if (direction === 'up' && currentIndex > 0) {
+                    [idsOnDay[currentIndex], idsOnDay[currentIndex - 1]] = [idsOnDay[currentIndex - 1], idsOnDay[currentIndex]];
+                } else if (direction === 'down' && currentIndex < idsOnDay.length - 1) {
+                    [idsOnDay[currentIndex], idsOnDay[currentIndex + 1]] = [idsOnDay[currentIndex + 1], idsOnDay[currentIndex]];
+                } else {
+                    continue;
+                }
+
+                const update = db.prepare('UPDATE daily_tasks SET display_order = ? WHERE id = ?');
+                idsOnDay.forEach((id, index) => {
+                    update.run(index, id);
+                });
+            }
+        })();
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Task move vertical error:", err);
+        res.status(500).json({ error: 'Failed to move task.' });
     }
 });
 
@@ -1345,6 +1429,10 @@ app.delete('/api/data/clear', (req, res) => {
                 if (!startDate || !endDate) throw new Error('Missing date bounds.');
                 dateCondition = ' AND date BETWEEN ? AND ?';
                 params.push(startDate, endDate);
+            } else if (scope === 'future') {
+                if (!startDate) throw new Error('Missing start date.');
+                dateCondition = ' AND date >= ?';
+                params.push(startDate);
             }
 
             if (type === 'tasks' || type === 'both') {
@@ -1614,27 +1702,151 @@ app.post('/api/tasks/assign_missing', (req, res) => {
 
 // --- API: STATISTICS ---
 app.get('/api/statistics', (req, res) => {
+    const { rosterType = 'QA', timeRange = 'all' } = req.query;
     try {
-        const statuses = db.prepare(`SELECT status, COUNT(*) as count FROM roster_entries WHERE status IN ('Sick', 'Unavailable', 'WFH') GROUP BY status`).all();
-        const taskAllocation = db.prepare(`SELECT s.name, COUNT(st.id) as count FROM shift_tasks st JOIN roster_entries r ON st.entry_id = r.id JOIN staff s ON r.staff_id = s.id GROUP BY s.name ORDER BY count DESC LIMIT 10`).all();
-        const manualMissing = db.prepare(`SELECT SUM(manual_add) as count FROM empty_shift_metadata WHERE is_ignored = 0`).get().count || 0;
-        const totalIgnored = db.prepare(`SELECT COUNT(*) as count FROM empty_shift_metadata WHERE is_ignored = 1`).get().count || 0;
-        const roleCounts = db.prepare(`SELECT shift_title, COUNT(*) as count FROM roster_entries GROUP BY shift_title ORDER BY count DESC LIMIT 10`).all();
+        const statuses = db.prepare(`SELECT status, COUNT(*) as count FROM roster_entries WHERE status IN ('Sick', 'Unavailable', 'WFH') AND roster_type = ? GROUP BY status`).all(rosterType);
+        const taskAllocation = db.prepare(`SELECT s.name, COUNT(st.id) as count FROM shift_tasks st JOIN roster_entries r ON st.entry_id = r.id JOIN staff s ON r.staff_id = s.id WHERE r.roster_type = ? GROUP BY s.name ORDER BY count DESC LIMIT 10`).all(rosterType);
+        const manualMissing = db.prepare(`SELECT SUM(manual_add) as count FROM empty_shift_metadata WHERE is_ignored = 0 AND roster_type = ?`).get(rosterType).count || 0;
+        const totalIgnored = db.prepare(`SELECT COUNT(*) as count FROM empty_shift_metadata WHERE is_ignored = 1 AND roster_type = ?`).get(rosterType).count || 0;
+        const roleCounts = db.prepare(`SELECT shift_title, COUNT(*) as count FROM roster_entries WHERE roster_type = ? GROUP BY shift_title ORDER BY count DESC LIMIT 10`).all(rosterType);
+
+        function calculateHours(shiftTime) {
+            if (!shiftTime) return 7.5;
+            const str = shiftTime.toLowerCase().replace(/\s+/g, '');
+            const match = str.match(/(\d{1,2})[:\.]?(\d{2})?(am|pm)?-(\d{1,2})[:\.]?(\d{2})?(am|pm)?/);
+            if (match) {
+                let h1 = parseInt(match[1]), m1 = parseInt(match[2]||'0'), p1 = match[3];
+                let h2 = parseInt(match[4]), m2 = parseInt(match[5]||'0'), p2 = match[6];
+                
+                if (p1 === 'pm' && h1 < 12) h1 += 12;
+                if (p1 === 'am' && h1 === 12) h1 = 0;
+                if (!p1 && h1 < 6) h1 += 12;
+                if (p2 === 'pm' && h2 < 12) h2 += 12;
+                if (p2 === 'am' && h2 === 12) h2 = 0;
+                if (!p2 && h2 < 12 && h2 <= h1) h2 += 12;
+
+                let diff = (h2 + m2/60) - (h1 + m1/60);
+                if (diff >= 6) diff -= 0.5;
+                return diff > 0 ? diff : 7.5;
+            }
+            return 7.5;
+        }
+
+        const taskHoursMap = {};
+        const allShiftTasks = db.prepare(`SELECT st.task_name, re.shift_time FROM shift_tasks st JOIN roster_entries re ON st.entry_id = re.id WHERE re.roster_type = ?`).all(rosterType);
+        allShiftTasks.forEach(st => {
+            const hrs = calculateHours(st.shift_time);
+            if (!taskHoursMap[st.task_name]) taskHoursMap[st.task_name] = 0;
+            taskHoursMap[st.task_name] += hrs;
+        });
+        const taskHours = Object.keys(taskHoursMap).map(k => ({ task: k, hours: taskHoursMap[k] })).sort((a, b) => b.hours - a.hours);
+
+        const weeklyStatsMap = {};
+        const allEntries = db.prepare(`SELECT date, shift_time, status FROM roster_entries WHERE roster_type = ?`).all(rosterType);
+        allEntries.forEach(re => {
+            const d = new Date(re.date + 'T12:00:00Z');
+            const day = d.getUTCDay();
+            const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1);
+            d.setUTCDate(diff);
+            const weekCommencing = d.toISOString().split('T')[0];
+            
+            if (!weeklyStatsMap[weekCommencing]) weeklyStatsMap[weekCommencing] = { hours: 0, wfh: 0, sick: 0, unavailable: 0 };
+            
+            if (re.status === 'WFH') {
+                weeklyStatsMap[weekCommencing].wfh++;
+                weeklyStatsMap[weekCommencing].hours += calculateHours(re.shift_time);
+            } else if (re.status === 'Sick') {
+                weeklyStatsMap[weekCommencing].sick++;
+            } else if (re.status === 'Unavailable') {
+                weeklyStatsMap[weekCommencing].unavailable++;
+            } else {
+                weeklyStatsMap[weekCommencing].hours += calculateHours(re.shift_time);
+            }
+        });
         
-        const tasksOverTime = db.prepare(`
-            SELECT strftime('%Y-%m', date) as month, COUNT(*) as count 
-            FROM (
-                SELECT date FROM daily_tasks
-                UNION ALL
-                SELECT re.date FROM shift_tasks st JOIN roster_entries re ON st.entry_id = re.id
-            ) 
-            WHERE date >= date('now', '-6 months') 
-            GROUP BY month 
-            ORDER BY month ASC
-        `).all();
+        const sortedWeeks = Object.keys(weeklyStatsMap).sort();
+        const rosterHoursOverTime = sortedWeeks.map(w => ({ week: w, hours: weeklyStatsMap[w].hours }));
+        const statusOverTime = sortedWeeks.map(w => ({ 
+            week: w, wfh: weeklyStatsMap[w].wfh, sick: weeklyStatsMap[w].sick, unavailable: weeklyStatsMap[w].unavailable 
+        }));
+
+        // Apply variable time range dynamically
+        let userTaskDateFilter = '';
+        if (timeRange !== 'all') {
+            const months = parseInt(timeRange);
+            if (!isNaN(months)) {
+                userTaskDateFilter = ` AND re.date >= date('now', '-${months} months')`;
+            }
+        }
         
-        res.json({ success: true, statuses, taskAllocation, manualMissing, totalIgnored, roleCounts, tasksOverTime });
+        const userTasksMap = {};
+        const userTotalHoursMap = {};
+        const weeklyTaskStats = {};
+
+        const allUserEntries = db.prepare(`
+            SELECT re.id, s.name as userName, re.shift_time, re.status, re.date
+            FROM roster_entries re
+            JOIN staff s ON re.staff_id = s.id
+            WHERE re.roster_type = ? AND re.status NOT IN ('Sick', 'Unavailable') ${userTaskDateFilter}
+        `).all(rosterType);
+
+        const shiftTasksData = db.prepare(`SELECT entry_id, task_name FROM shift_tasks`).all();
+        const tasksByEntry = {};
+        shiftTasksData.forEach(st => {
+            if (!tasksByEntry[st.entry_id]) tasksByEntry[st.entry_id] = [];
+            tasksByEntry[st.entry_id].push(st.task_name);
+        });
+
+        allUserEntries.forEach(row => {
+            const userName = row.userName;
+            const shiftHours = calculateHours(row.shift_time);
+            
+            if (!userTasksMap[userName]) userTasksMap[userName] = {};
+            if (!userTotalHoursMap[userName]) userTotalHoursMap[userName] = 0;
+            
+            userTotalHoursMap[userName] += shiftHours;
+            
+            const d = new Date(row.date + 'T12:00:00Z');
+            const day = d.getUTCDay();
+            const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1);
+            d.setUTCDate(diff);
+            const weekCommencing = d.toISOString().split('T')[0];
+            
+            if (!weeklyTaskStats[weekCommencing]) weeklyTaskStats[weekCommencing] = {};
+
+            const tasks = tasksByEntry[row.id] || [];
+            if (tasks.length === 0) {
+                if (!userTasksMap[userName]['Unassigned']) userTasksMap[userName]['Unassigned'] = 0;
+                userTasksMap[userName]['Unassigned'] += shiftHours;
+            } else {
+                const hoursPerTask = shiftHours / tasks.length;
+                tasks.forEach(taskName => {
+                    if (!userTasksMap[userName][taskName]) userTasksMap[userName][taskName] = 0;
+                    userTasksMap[userName][taskName] += hoursPerTask;
+                    
+                    if (!weeklyTaskStats[weekCommencing][taskName]) weeklyTaskStats[weekCommencing][taskName] = 0;
+                    weeklyTaskStats[weekCommencing][taskName] += hoursPerTask;
+                });
+            }
+        });
+
+        const userTasks = Object.keys(userTasksMap).map(user => {
+            return {
+                user,
+                totalHours: userTotalHoursMap[user],
+                tasks: Object.keys(userTasksMap[user]).map(task => ({
+                    task,
+                    hours: userTasksMap[user][task]
+                })).sort((a, b) => b.hours - a.hours)
+            };
+        }).sort((a, b) => a.user.localeCompare(b.user));
+
+        res.json({ 
+            success: true, statuses, taskAllocation, manualMissing, totalIgnored, roleCounts,
+            taskHours, rosterHoursOverTime, statusOverTime, userTasks, weeklyTaskStats
+        });
     } catch (err) {
+        console.error("Statistics error:", err);
         res.status(500).json({ success: false, error: 'Failed to generate statistics.' });
     }
 });
@@ -1644,7 +1856,7 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'An unexpected server error occurred.' });
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3002;
 server.listen(PORT, () => {
     console.log(`QA Roster Server running on port ${PORT}`);
 });

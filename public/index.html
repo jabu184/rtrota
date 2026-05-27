@@ -64,6 +64,7 @@
         .light-theme .color-8 { background: #fffaf0 !important; border-color: #f6e05e !important; }
         .light-theme .color-9 { background: #e6fffa !important; border-color: #4fd1c5 !important; }
         .light-theme .color-10 { background: #f7fafc !important; border-color: #e2e8f0 !important; }
+        .light-theme .color-11 { background: #f7fee7 !important; border-color: #bef264 !important; }
         .light-theme .empty-chip.missing { background: #fff5f5; border-color: #feb2b2; color: #c53030; }
         .light-theme .empty-comment { color: #718096; }
 
@@ -140,6 +141,7 @@
         .color-8 { background: #975a16 !important; border-color: #d69e2e !important; }
         .color-9 { background: #086f83 !important; border-color: #38b2ac !important; }
         .color-10 { background: #4a5568 !important; border-color: #718096 !important; }
+        .color-11 { background: #4d7c0f !important; border-color: #65a30d !important; }
         
         .empty-chip { border-radius: 4px; padding: 6px; font-size: 12px; text-align: center; cursor: context-menu; margin-bottom: 6px; }
         .empty-chip.missing { background: #742a2a; border: 1px solid #fc8181; color: #fed7d7; }
@@ -235,7 +237,7 @@
     <div id="rotaDashboard"></div>
     
     <div style="text-align: right; margin-top: 30px; padding-bottom: 10px; color: #a0aec0; font-size: 12px;">
-        Created by James Burnley | Version 1.11 Beta
+        Created by James Burnley | Version 1.2
     </div>
 </div>
 
@@ -285,6 +287,9 @@
     <div id="cm-task-pm" class="cm-item cm-task" onclick="handleCmTaskDuration('PM')">PM</div>
     <div id="cm-task-allday" class="cm-item cm-task" onclick="handleCmTaskDuration('All Day')">All Day</div>
     <div class="cm-divider cm-task"></div>
+    <div id="cm-task-move-up" class="cm-item cm-task" onclick="handleCmTaskMove('up')">Move Up</div>
+    <div id="cm-task-move-down" class="cm-item cm-task" onclick="handleCmTaskMove('down')">Move Down</div>
+    <div class="cm-divider cm-task"></div>
     <div id="cm-task-edit" class="cm-item cm-task" onclick="handleCmTaskEdit()">Edit Task Name</div>
     <div class="cm-divider cm-task"></div>
     <div id="cm-task-color1" class="cm-item cm-task" onclick="handleCmTaskColor('color-1')">Color: Orange</div>
@@ -297,6 +302,7 @@
     <div id="cm-task-color8" class="cm-item cm-task" onclick="handleCmTaskColor('color-8')">Color: Yellow</div>
     <div id="cm-task-color9" class="cm-item cm-task" onclick="handleCmTaskColor('color-9')">Color: Cyan</div>
     <div id="cm-task-color10" class="cm-item cm-task" onclick="handleCmTaskColor('color-10')">Color: Gray</div>
+    <div id="cm-task-color11" class="cm-item cm-task" onclick="handleCmTaskColor('color-11')">Color: Lime</div>
     <div class="cm-divider cm-empty"></div>
     <div id="cm-empty-comment" class="cm-item cm-empty" onclick="handleCmComment()">Add/Edit Comment</div>
     <div id="cm-empty-ignore" class="cm-item cm-empty" onclick="handleCmIgnore()">Ignore</div>
@@ -310,6 +316,7 @@
     <div id="cm-dropzone-add-missing" class="cm-item cm-dropzone" onclick="handleCmAddMissing()">Add Missing Assignment</div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="app.js?v=2"></script>
 </body>
