@@ -1331,11 +1331,11 @@ function renderGridDashboard(data, tasksData = [], metaData = []) {
                     else if (alloc.status === 'Sick') statusBadge = '<div class="status-badge status-unavailable">Sick</div>';
 
                     let unavailableClass = (alloc.status === 'Unavailable' || alloc.status === 'Sick') ? ' chip-unavailable' : '';
-                    let wfhIcon = alloc.status === 'WFH' ? '<div class="wfh-icon" title="Working From Home">🏠</div>' : '';
-                    let sickIcon = alloc.status === 'Sick' ? '<div class="wfh-icon" title="Sick">🤢</div>' : '';
-                    let trainingIcon = alloc.status === 'Training' ? '<div class="wfh-icon" title="Training">🧑‍🏫</div>' : '';
-                    let assessmentIcon = alloc.status === 'Assessment' ? '<div class="wfh-icon" title="Assessment">📋</div>' : '';
-                    let noteIcon = alloc.note ? `<div class="note-icon" title="${alloc.note.replace(/"/g, '&quot;')}">📄</div>` : '';
+                    let wfhIcon = alloc.status === 'WFH' ? '<div class="top-icon" title="Working From Home">🏠</div>' : '';
+                    let sickIcon = alloc.status === 'Sick' ? '<div class="top-icon" title="Sick">🤢</div>' : '';
+                    let trainingIcon = alloc.status === 'Training' ? '<div class="top-icon" title="Training">🧑‍🏫</div>' : '';
+                    let assessmentIcon = alloc.status === 'Assessment' ? '<div class="top-icon" title="Assessment">📋</div>' : '';
+                    let noteIcon = alloc.note ? `<div class="top-icon" title="${alloc.note.replace(/"/g, '&quot;')}">📄</div>` : '';
 
                     let draggableAttr = previewState.active ? '' : `draggable="true" ondragstart="dragStart(event, '${alloc.entry_id}')"`;
                     let isSelected = selectedShifts.has(String(alloc.entry_id)) ? ' selected-shift' : '';
@@ -1345,6 +1345,10 @@ function renderGridDashboard(data, tasksData = [], metaData = []) {
                             <div class="chip-header">
                                 <div class="staff-name">${alloc.staff_name}${multiRoleIcon}</div>
                                 <div class="top-right-icons">
+                                    ${wfhIcon}
+                                    ${sickIcon}
+                                    ${trainingIcon}
+                                    ${assessmentIcon}
                                     ${noteIcon}
                                     ${!previewState.active ? `<button class="delete-btn" onclick="deleteShift('${alloc.entry_id}')" title="Remove Shift">✖</button>` : ''}
                                 </div>
@@ -1352,10 +1356,6 @@ function renderGridDashboard(data, tasksData = [], metaData = []) {
                             ${statusBadge}
                             ${shiftTimeHTML}
                             ${assignedTasksHTML}
-                            ${wfhIcon}
-                            ${sickIcon}
-                            ${trainingIcon}
-                            ${assessmentIcon}
                             ${previewControls}
                         </div>
                     `;
@@ -2550,12 +2550,67 @@ dynamicStyle.innerHTML = `
         align-items: center;
         gap: 4px;
     }
-    .top-right-icons .note-icon {
+    .top-right-icons .top-icon {
         position: static !important;
         margin: 0;
         padding: 0;
         cursor: help;
+        font-size: 12px;
     }
-    .top-right-icons .note-icon { font-size: 12px; }
 `;
 document.head.appendChild(dynamicStyle);
+
+// --- REAL-TIME UPDATES (Socket.io) ---
+const socket = typeof io !== 'undefined' ? io() : null;
+
+if (socket) {
+    socket.on('roster_updated', () => {
+        if (isUserBusy()) {
+            showLiveUpdateBanner();
+        } else {
+            // If the user isn't interacting, just reload the grid seamlessly
+            loadRoster();
+        }
+    });
+}
+
+function isUserBusy() {
+    if (previewState.active) return true;
+    const customModal = document.getElementById('customModal');
+    if (customModal && customModal.style.display === 'flex') return true;
+    const staffModal = document.getElementById('staffModal');
+    if (staffModal && staffModal.style.display === 'flex') return true;
+    const ctxMenu = document.getElementById('contextMenu');
+    if (ctxMenu && ctxMenu.style.display === 'block') return true;
+    if (document.querySelectorAll('.drag-over-shift, .drag-over, .selected-shift').length > 0) return true;
+    return false;
+}
+
+function showLiveUpdateBanner() {
+    let banner = document.getElementById('liveUpdateBanner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'liveUpdateBanner';
+        banner.className = 'preview-banner';
+        banner.style.borderColor = '#3182ce';
+        banner.style.backgroundColor = '#ebf8ff';
+        banner.style.color = '#2b6cb0';
+        banner.innerHTML = `
+            <div>
+                <span>🔄 <strong>Real-time Update Available</strong> - A colleague has made changes.</span>
+            </div>
+            <div>
+                <button class="modal-btn modal-btn-primary" onclick="applyLiveUpdate()">Refresh Now</button>
+            </div>
+        `;
+        const dashboard = document.getElementById('rotaDashboard');
+        dashboard.parentNode.insertBefore(banner, dashboard);
+    }
+}
+
+window.applyLiveUpdate = function() {
+    const banner = document.getElementById('liveUpdateBanner');
+    if (banner) banner.remove();
+    clearSelection();
+    loadRoster();
+};

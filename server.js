@@ -4,12 +4,34 @@ const Database = require('better-sqlite3');
 const XLSX = require('xlsx');
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
+const { Server } = require('socket.io');
 
 if (!fs.existsSync('uploads')) {
     fs.mkdirSync('uploads', { recursive: true });
 }
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
+// --- REAL-TIME UPDATES MIDDLEWARE ---
+// Automatically emits a socket event whenever any API endpoint successfully modifies the database
+app.use((req, res, next) => {
+    const originalJson = res.json;
+    res.json = function(body) {
+        if (['POST', 'PUT', 'DELETE'].includes(req.method) && req.path.startsWith('/api/')) {
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+                if (body && body.success === true && !body.isPreview) {
+                    io.emit('roster_updated');
+                }
+            }
+        }
+        return originalJson.call(this, body);
+    };
+    next();
+});
+
 const upload = multer({ dest: 'uploads/' });
 let db = new Database('database.db');
 
@@ -1621,6 +1643,6 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
     console.log(`QA Roster Server running on port ${PORT}`);
 });
