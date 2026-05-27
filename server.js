@@ -226,7 +226,7 @@ function addDays(dateStr, days) {
 }
 
 // Helper to apply default tasks and re-attach orphaned tasks
-function applyDefaultTasks() {
+function applyDefaultTasks(isImport = false) {
     try {
         const getShifts = db.prepare(`
             SELECT r.id, s.default_task 
@@ -254,34 +254,36 @@ function applyDefaultTasks() {
         });
 
         // 2. Assign default tasks to any staff if the task exists on that day
-        const entriesWithDefaults = db.prepare(`
-            SELECT r.id, r.date, r.roster_type, s.default_task, r.staff_id, r.shift_title
-            FROM roster_entries r
-            JOIN staff s ON r.staff_id = s.id
-            WHERE s.default_task IS NOT NULL AND s.default_task != ''
-        `).all();
+        if (isImport) {
+            const entriesWithDefaults = db.prepare(`
+                SELECT r.id, r.date, r.roster_type, s.default_task, r.staff_id, r.shift_title
+                FROM roster_entries r
+                JOIN staff s ON r.staff_id = s.id
+                WHERE s.default_task IS NOT NULL AND s.default_task != ''
+            `).all();
 
-        const getTaskDetails = db.prepare(`
-            SELECT task_name, duration, color, group_id FROM daily_tasks WHERE date = ? AND task_name = ? AND roster_type = ?
-            UNION ALL
-            SELECT st.task_name, st.duration, st.color, st.group_id FROM shift_tasks st
-            JOIN roster_entries re ON st.entry_id = re.id
-            WHERE re.date = ? AND st.task_name = ? AND re.roster_type = ?
-            LIMIT 1
-        `);
+            const getTaskDetails = db.prepare(`
+                SELECT task_name, duration, color, group_id FROM daily_tasks WHERE date = ? AND task_name = ? AND roster_type = ?
+                UNION ALL
+                SELECT st.task_name, st.duration, st.color, st.group_id FROM shift_tasks st
+                JOIN roster_entries re ON st.entry_id = re.id
+                WHERE re.date = ? AND st.task_name = ? AND re.roster_type = ?
+                LIMIT 1
+            `);
 
-        entriesWithDefaults.forEach(e => {
-            if (e.shift_title === 'QA L') {
-                return; // Skip applying default tasks to QA L shifts entirely
-            }
-
-            if (!checkExisting.get(e.id, e.default_task)) {
-                const taskInfo = getTaskDetails.get(e.date, e.default_task, e.roster_type || 'QA', e.date, e.default_task, e.roster_type || 'QA');
-                if (taskInfo) {
-                    insertShiftTask.run(e.id, taskInfo.task_name, taskInfo.duration, taskInfo.color, taskInfo.group_id);
+            entriesWithDefaults.forEach(e => {
+                if (e.shift_title === 'QA L') {
+                    return; // Skip applying default tasks to QA L shifts entirely
                 }
-            }
-        });
+
+                if (!checkExisting.get(e.id, e.default_task)) {
+                    const taskInfo = getTaskDetails.get(e.date, e.default_task, e.roster_type || 'QA', e.date, e.default_task, e.roster_type || 'QA');
+                    if (taskInfo) {
+                        insertShiftTask.run(e.id, taskInfo.task_name, taskInfo.duration, taskInfo.color, taskInfo.group_id);
+                    }
+                }
+            });
+        }
     } catch(e) { console.error("Error applying default tasks:", e); }
 }
 
@@ -614,7 +616,7 @@ app.post('/api/upload', upload.single('roster'), (req, res) => {
         });
 
         transaction(entriesToInsert);
-        applyDefaultTasks();
+        applyDefaultTasks(true);
         autoGroupTasksBackend(rosterType);
 
         if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
@@ -708,7 +710,7 @@ app.post('/api/upload/apply', (req, res) => {
         });
 
         transaction(added || []);
-        applyDefaultTasks();
+        applyDefaultTasks(true);
         autoGroupTasksBackend(rosterType);
 
         res.json({
