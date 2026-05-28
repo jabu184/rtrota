@@ -61,6 +61,42 @@ function getAffectedShifts(clickedChip) {
     return [String(entryId)];
 }
 
+async function confirmMultiSelection(entryIds, actionName) {
+    if (!entryIds || entryIds.length <= 1) return true;
+    
+    const staffCounts = {};
+    const uniqueDates = new Set();
+    let totalItems = 0;
+    
+    entryIds.forEach(id => {
+        const isMissing = String(id).startsWith('empty|');
+        if (isMissing) {
+            const parts = String(id).split('|');
+            uniqueDates.add(parts[1]);
+            staffCounts['Missing Assignment'] = (staffCounts['Missing Assignment'] || 0) + 1;
+            totalItems++;
+        } else {
+            const el = document.querySelector(`[data-entry-id='${id}']`);
+            if (el) {
+                const staffName = el.getAttribute('data-staff-name') || 'Unknown';
+                const dropzone = el.closest('.dropzone');
+                if (dropzone) uniqueDates.add(dropzone.getAttribute('data-date'));
+                staffCounts[staffName] = (staffCounts[staffName] || 0) + 1;
+                totalItems++;
+            }
+        }
+    });
+    
+    let message = `You are about to ${actionName} for ${totalItems} selected item(s) across ${uniqueDates.size} day(s).\n\n`;
+    message += `Affected Users:\n`;
+    for (const [staff, count] of Object.entries(staffCounts)) {
+        message += `• ${staff}: ${count} item(s)\n`;
+    }
+    message += `\n⚠️ Warning: Not all selections may be visible on screen.`;
+    
+    return await customConfirm(message);
+}
+
 function toBritishDate(isoStr) {
     if(!isoStr) return '';
     const parts = isoStr.split('-');
@@ -1310,7 +1346,7 @@ function renderGridDashboard(data, tasksData = [], metaData = []) {
         const grid = document.createElement('div');
         grid.className = 'rota-grid';
 
-        grid.innerHTML += `<div class="grid-header" style="background:#1a202c; border-bottom:2px solid #4a5568;">e-roster Role</div>`;
+        grid.innerHTML += `<div class="grid-header" style="background:#1a202c; border-bottom:2px solid #4a5568; grid-column: span 2;">e-roster Role</div>`;
         const weekDates = getWeekDaysArray(wk);
         
         weekDates.forEach((dStr, idx) => {
@@ -1322,7 +1358,7 @@ function renderGridDashboard(data, tasksData = [], metaData = []) {
 
         // --- Render Daily Tasks Row (Moved to top) ---
         const dtHeaderClass = isDailyTasksHidden ? 'grid-cell role-title-cell dt-header collapsed' : 'grid-cell role-title-cell dt-header';
-        grid.innerHTML += `<div class="${dtHeaderClass}" style="color: #ecc94b; border-left-color: #ecc94b; cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="toggleDailyTasks()">
+        grid.innerHTML += `<div class="${dtHeaderClass}" style="color: #ecc94b; border-left-color: #ecc94b; cursor: pointer; display: flex; justify-content: space-between; align-items: center; grid-column: span 2;" onclick="toggleDailyTasks()">
             <span>Daily Tasks</span>
             <span class="dt-toggle-icon">${isDailyTasksHidden ? '▶' : '▼'}</span>
         </div>`;
@@ -1387,164 +1423,241 @@ function renderGridDashboard(data, tasksData = [], metaData = []) {
         });
 
         roleRows.forEach(role => {
-            grid.innerHTML += `<div class="grid-cell role-title-cell">${role}</div>`;
-
+            const signatures = new Set();
+            let hasUnassigned = false;
+            
             weekDates.forEach(dayDate => {
-                const allocations = weeks[wk][role][dayDate] || [];
-                const todayCellClass = (dayDate === todayStr) ? ' today-cell' : '';
-                let cellHTML = `<div class="grid-cell dropzone${todayCellClass}" data-role="${role}" data-date="${dayDate}" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="drop(event)">`;
-
-                const meta = metaData.find(m => m.date === dayDate && m.shift_title === role) || {};
-                const isWeekend = (new Date(dayDate + 'T12:00:00Z').getUTCDay() % 6 === 0);
-                const isOverflowRole = /\d+$/.test(role) && parseInt(role.match(/\d+$/)[0], 10) > 1;
+                const allAllocations = weeks[wk][role][dayDate] || [];
+                allAllocations.forEach(alloc => {
+                    if (!alloc.assigned_tasks || alloc.assigned_tasks.length === 0) {
+                        hasUnassigned = true;
+                    } else {
+                        signatures.add(alloc.assigned_tasks[0].task_name);
+                    }
+                });
                 
-                const shouldShowAutoEmpty = (allocations.length === 0 && !isWeekend && !isOverflowRole);
-                const manualAddCount = meta.manual_add || 0;
-
-                let emptyChipsCount = (shouldShowAutoEmpty ? 1 : 0) + manualAddCount;
-                if (emptyChipsCount < 0) emptyChipsCount = 0; // Prevent negative chips
-                if (!isAdmin) emptyChipsCount = 0; // Hide missing assignments from non-admins
-                
-                let renderedOrphanedTasks = false;
-
-                for (let i = 0; i < emptyChipsCount; i++) {
-                        const commentHtml = meta.comment ? `<div class="empty-comment">📝 ${meta.comment}</div>` : '';
-                        const stateClass = meta.is_ignored ? 'ignored' : 'missing';
-                        
-                        let orphanedTasksHTML = '';
-                        if (!renderedOrphanedTasks) {
-                            const orphanedTasks = tasksData.filter(t => t.date === dayDate && t.shift_title === role);
-                            if (orphanedTasks.length > 0) {
-                            orphanedTasksHTML = `<div class="assigned-tasks-container">` + 
-                                orphanedTasks.map(t => {
-                                    let durationSuffix = '';
-                                    if (t.duration === 'AM') durationSuffix = '<span class="duration-badge">AM</span>';
-                                    else if (t.duration === 'PM') durationSuffix = '<span class="duration-badge">PM</span>';
-                                    return `
-                                    <div class="assigned-task-tag ${t.color || 'color-1'}" draggable="true" ondragstart="dragTaskStart(event, ${t.id}, this.getAttribute('data-task-name'), this.getAttribute('data-task-duration'), this.getAttribute('data-task-color'), this.getAttribute('data-task-group-id'))" data-task-id="${t.id}" data-task-type="daily" data-task-duration="${t.duration || 'All Day'}" data-task-color="${t.color || 'color-1'}" data-task-name="${t.task_name.replace(/"/g, '&quot;')}" data-task-group-id="${t.group_id || ''}">
-                                        ${t.task_name}${durationSuffix}
-                                        <button class="delete-task-tag-btn" onclick="deleteTask(${t.id}, event, '${t.group_id || ''}')" title="Remove Task">✖</button>
-                                    </div>
-                                    `;
-                                }).join('') + `</div>`;
-                            }
-                            renderedOrphanedTasks = true;
-                        }
-
-                        let emptyChipId = `empty|${dayDate}|${role}`;
-                        let isSelectedEmpty = selectedShifts.has(emptyChipId) ? ' selected-shift' : '';
-
-                        cellHTML += `<div class="empty-chip ${stateClass}${isSelectedEmpty}" data-date="${dayDate}" data-role="${role}" style="position: relative;">
-                            ${isAdmin ? `<button class="delete-btn" style="position: absolute; top: 2px; right: 4px;" onclick="removeMissingAssignment(event, '${dayDate}', '${role.replace(/'/g, "\\'")}')" title="Remove Missing Assignment">✖</button>` : ''}
-                            <div style="font-weight: bold;">Missing Assignment</div>
-                            ${commentHtml}
-                            ${orphanedTasksHTML}
-                        </div>`;
+                if (isAdmin) {
+                    const meta = metaData.find(m => m.date === dayDate && m.shift_title === role) || {};
+                    const isWeekend = (new Date(dayDate + 'T12:00:00Z').getUTCDay() % 6 === 0);
+                    const isOverflowRole = /\d+$/.test(role) && parseInt(role.match(/\d+$/)[0], 10) > 1;
+                    const shouldShowAutoEmpty = (allAllocations.length === 0 && !isWeekend && !isOverflowRole);
+                    if (shouldShowAutoEmpty || (meta.manual_add || 0) > 0) hasUnassigned = true;
+                    
+                    const orphanedTasks = tasksData.filter(t => t.date === dayDate && t.shift_title === role);
+                    if (orphanedTasks.length > 0) hasUnassigned = true;
                 }
+            });
+            
+            if (hasUnassigned || signatures.size === 0) {
+                signatures.add('Unassigned');
+            }
+            
+            const weekTaskRanks = {};
+            let rankIndex = 0;
+            tasksData.forEach(t => {
+                if (weekTaskRanks[t.task_name] === undefined && !t.shift_title) {
+                    weekTaskRanks[t.task_name] = rankIndex++;
+                }
+            });
+            
+            const sortedSignatures = Array.from(signatures).sort((a, b) => {
+                if (a === 'Unassigned') return -1;
+                if (b === 'Unassigned') return 1;
                 
-                if (allocations.length > 0) {
-                    allocations.forEach(alloc => {
-                        let chipClass = 'allocation-chip';
-                        let chipStyle = '';
+                const rankA = weekTaskRanks[a] !== undefined ? weekTaskRanks[a] : 999;
+                const rankB = weekTaskRanks[b] !== undefined ? weekTaskRanks[b] : 999;
+                
+                if (rankA !== rankB) return rankA - rankB;
+                return a.localeCompare(b);
+            });
+            
+            const rowSpan = sortedSignatures.length;
+            grid.innerHTML += `<div class="grid-cell role-title-cell" style="grid-row: span ${rowSpan};">${role}</div>`;
+            
+            sortedSignatures.forEach((sig, sigIndex) => {
+                let sigColor = 'color-10'; // Default gray background for unassigned/unknown
+                if (sig !== 'Unassigned') {
+                    const t = tasksData.find(task => task.task_name === sig);
+                    if (t && t.color) sigColor = t.color;
+                }
+                let sigDisplayName = sig === 'Unassigned' ? 'General' : sig;
+                grid.innerHTML += `<div class="grid-cell ${sigColor}" style="display: flex; align-items: center; justify-content: center; padding: 2px; overflow: hidden; border: 1px solid rgba(0,0,0,0.1);">
+                    <span class="task-indicator-text" style="writing-mode: vertical-rl; transform: rotate(180deg); font-size: 11px; font-weight: bold; white-space: nowrap; text-align: center;">${sigDisplayName}</span>
+                </div>`;
+                
+                weekDates.forEach(dayDate => {
+                    const allAllocations = weeks[wk][role][dayDate] || [];
+                    const allocations = allAllocations.filter(alloc => {
+                        const allocSig = alloc.assigned_tasks && alloc.assigned_tasks.length > 0 
+                            ? alloc.assigned_tasks[0].task_name
+                            : 'Unassigned';
+                        return allocSig === sig;
+                    });
+                    
+                    const todayCellClass = (dayDate === todayStr) ? ' today-cell' : '';
+                    let cellHTML = `<div class="grid-cell dropzone${todayCellClass}" data-role="${role}" data-date="${dayDate}" data-task-signature="${sig.replace(/"/g, '&quot;')}" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="drop(event)">`;
 
-                        if (alloc.assigned_tasks && alloc.assigned_tasks.length > 0) {
-                            const taskColor = alloc.assigned_tasks[0].color || 'color-1';
-                            chipClass += ` ${taskColor}`;
-                        } else {
-                            if (role.includes('Elec')) chipClass += ' chip-elec';
-                            else if (role.includes('IMRT')) chipClass += ' chip-imrt';
-                            else if (role.toLowerCase().includes('lead')) chipClass += ' chip-lead';
-                            else if (role.includes('QA L')) chipClass += ' chip-qa-l';
-                            else if (role.startsWith('QA') || role.startsWith('Q.A.')) chipClass += ' chip-qa';
-                            else chipStyle = getRoleColor(role);
+                    if (sig === 'Unassigned') {
+                        const meta = metaData.find(m => m.date === dayDate && m.shift_title === role) || {};
+                        const isWeekend = (new Date(dayDate + 'T12:00:00Z').getUTCDay() % 6 === 0);
+                        const isOverflowRole = /\d+$/.test(role) && parseInt(role.match(/\d+$/)[0], 10) > 1;
+                        
+                        const shouldShowAutoEmpty = (allAllocations.length === 0 && !isWeekend && !isOverflowRole);
+                        const manualAddCount = meta.manual_add || 0;
+
+                        let emptyChipsCount = (shouldShowAutoEmpty ? 1 : 0) + manualAddCount;
+                        if (emptyChipsCount < 0) emptyChipsCount = 0;
+                        if (!isAdmin) emptyChipsCount = 0; 
+                        
+                        let renderedOrphanedTasks = false;
+
+                        for (let i = 0; i < emptyChipsCount; i++) {
+                            const commentHtml = meta.comment ? `<div class="empty-comment">📝 ${meta.comment}</div>` : '';
+                            const stateClass = meta.is_ignored ? 'ignored' : 'missing';
+                            
+                            let orphanedTasksHTML = '';
+                            if (!renderedOrphanedTasks) {
+                                const orphanedTasks = tasksData.filter(t => t.date === dayDate && t.shift_title === role);
+                                if (orphanedTasks.length > 0) {
+                                orphanedTasksHTML = `<div class="assigned-tasks-container">` + 
+                                    orphanedTasks.map(t => {
+                                        let durationSuffix = '';
+                                        if (t.duration === 'AM') durationSuffix = '<span class="duration-badge">AM</span>';
+                                        else if (t.duration === 'PM') durationSuffix = '<span class="duration-badge">PM</span>';
+                                        return `
+                                        <div class="assigned-task-tag ${t.color || 'color-1'}" draggable="true" ondragstart="dragTaskStart(event, ${t.id}, this.getAttribute('data-task-name'), this.getAttribute('data-task-duration'), this.getAttribute('data-task-color'), this.getAttribute('data-task-group-id'))" data-task-id="${t.id}" data-task-type="daily" data-task-duration="${t.duration || 'All Day'}" data-task-color="${t.color || 'color-1'}" data-task-name="${t.task_name.replace(/"/g, '&quot;')}" data-task-group-id="${t.group_id || ''}">
+                                            ${t.task_name}${durationSuffix}
+                                            <button class="delete-task-tag-btn" onclick="deleteTask(${t.id}, event, '${t.group_id || ''}')" title="Remove Task">✖</button>
+                                        </div>
+                                        `;
+                                    }).join('') + `</div>`;
+                                }
+                                renderedOrphanedTasks = true;
+                            }
+
+                            let emptyChipId = `empty|${dayDate}|${role}`;
+                            let isSelectedEmpty = selectedShifts.has(emptyChipId) ? ' selected-shift' : '';
+
+                            cellHTML += `<div class="empty-chip ${stateClass}${isSelectedEmpty}" data-date="${dayDate}" data-role="${role}" style="position: relative;">
+                                ${isAdmin ? `<button class="delete-btn" style="position: absolute; top: 2px; right: 4px;" onclick="removeMissingAssignment(event, '${dayDate}', '${role.replace(/'/g, "\\'")}')" title="Remove Missing Assignment">✖</button>` : ''}
+                                <div style="font-weight: bold;">Missing Assignment</div>
+                                ${commentHtml}
+                                ${orphanedTasksHTML}
+                            </div>`;
                         }
+                    }
+                    
+                    if (allocations.length > 0) {
+                        allocations.forEach(alloc => {
+                            let chipClass = 'allocation-chip';
+                            let chipStyle = '';
 
-                        let previewClasses = '';
-                        let previewControls = '';
-                        if (previewState.active) {
-                            if (alloc.isPreviewAdd) {
-                                previewClasses = ' preview-add';
-                                previewControls = `
-                                    <div class="preview-actions">
-                                        <button class="preview-btn accept" onclick="acceptPreview(event, 'add', ${alloc.previewId})" title="Accept">✔️</button>
-                                        <button class="preview-btn deny" onclick="denyPreview(event, 'add', ${alloc.previewId})" title="Reject">❌</button>
-                                    </div>`;
-                            } else if (alloc.isPreviewDelete) {
-                                if (alloc.previewStatus === 'pending') {
-                                    previewClasses = ' preview-delete';
+                            if (alloc.assigned_tasks && alloc.assigned_tasks.length > 0) {
+                                const taskColor = alloc.assigned_tasks[0].color || 'color-1';
+                                chipClass += ` ${taskColor}`;
+                            } else {
+                                if (role.includes('Elec')) chipClass += ' chip-elec';
+                                else if (role.includes('IMRT')) chipClass += ' chip-imrt';
+                                else if (role.toLowerCase().includes('lead')) chipClass += ' chip-lead';
+                                else if (role.includes('QA L')) chipClass += ' chip-qa-l';
+                                else if (role.startsWith('QA') || role.startsWith('Q.A.')) chipClass += ' chip-qa';
+                                else chipStyle = getRoleColor(role);
+                            }
+
+                            let previewClasses = '';
+                            let previewControls = '';
+                            if (previewState.active) {
+                                if (alloc.isPreviewAdd) {
+                                    previewClasses = ' preview-add';
                                     previewControls = `
                                         <div class="preview-actions">
-                                            <button class="preview-btn accept" onclick="acceptPreview(event, 'delete', ${alloc.previewId})" title="Accept Deletion">✔️</button>
-                                            <button class="preview-btn deny" onclick="denyPreview(event, 'delete', ${alloc.previewId})" title="Reject Deletion">❌</button>
+                                            <button class="preview-btn accept" onclick="acceptPreview(event, 'add', ${alloc.previewId})" title="Accept">✔️</button>
+                                            <button class="preview-btn deny" onclick="denyPreview(event, 'add', ${alloc.previewId})" title="Reject">❌</button>
                                         </div>`;
+                                } else if (alloc.isPreviewDelete) {
+                                    if (alloc.previewStatus === 'pending') {
+                                        previewClasses = ' preview-delete';
+                                        previewControls = `
+                                            <div class="preview-actions">
+                                                <button class="preview-btn accept" onclick="acceptPreview(event, 'delete', ${alloc.previewId})" title="Accept Deletion">✔️</button>
+                                                <button class="preview-btn deny" onclick="denyPreview(event, 'delete', ${alloc.previewId})" title="Reject Deletion">❌</button>
+                                            </div>`;
+                                    }
                                 }
                             }
-                        }
 
-                    let assignedTasksHTML = '';
-                    if (alloc.assigned_tasks && alloc.assigned_tasks.length > 0) {
-                        assignedTasksHTML = `<div class="assigned-tasks-container">` + 
-                            alloc.assigned_tasks.map(t => {
-                                let durationSuffix = '';
-                                if (t.duration === 'AM') durationSuffix = '<span class="duration-badge">AM</span>';
-                                else if (t.duration === 'PM') durationSuffix = '<span class="duration-badge">PM</span>';
-                                return `
-                                <div class="assigned-task-tag ${t.color || 'color-1'}" draggable="true" ondragstart="dragAssignedTaskStart(event, ${t.id}, this.getAttribute('data-task-name'), this.getAttribute('data-task-duration'), this.getAttribute('data-task-color'), this.getAttribute('data-task-group-id'))" data-task-id="${t.id}" data-task-type="assigned" data-task-duration="${t.duration || 'All Day'}" data-task-color="${t.color || 'color-1'}" data-task-name="${t.task_name.replace(/"/g, '&quot;')}" data-task-group-id="${t.group_id || ''}">
-                                    ${t.task_name}${durationSuffix}
-                                    <button class="delete-task-tag-btn" onclick="deleteAssignedTask(event, ${t.id}, '${t.group_id || ''}')" title="Remove Task">✖</button>
+                            let assignedTasksHTML = '';
+                            if (alloc.assigned_tasks && alloc.assigned_tasks.length > 0) {
+                                assignedTasksHTML = `<div class="assigned-tasks-container">` + 
+                                    alloc.assigned_tasks.map(t => {
+                                        let durationSuffix = '';
+                                        if (t.duration === 'AM') durationSuffix = '<span class="duration-badge">AM</span>';
+                                        else if (t.duration === 'PM') durationSuffix = '<span class="duration-badge">PM</span>';
+                                        return `
+                                        <div class="assigned-task-tag ${t.color || 'color-1'}" draggable="true" ondragstart="dragAssignedTaskStart(event, ${t.id}, this.getAttribute('data-task-name'), this.getAttribute('data-task-duration'), this.getAttribute('data-task-color'), this.getAttribute('data-task-group-id'))" data-task-id="${t.id}" data-task-type="assigned" data-task-duration="${t.duration || 'All Day'}" data-task-color="${t.color || 'color-1'}" data-task-name="${t.task_name.replace(/"/g, '&quot;')}" data-task-group-id="${t.group_id || ''}">
+                                            ${t.task_name}${durationSuffix}
+                                            <button class="delete-task-tag-btn" onclick="deleteAssignedTask(event, ${t.id}, '${t.group_id || ''}')" title="Remove Task">✖</button>
+                                        </div>
+                                        `;
+                                    }).join('') + `</div>`;
+                            }
+
+                            const isMultiRole = staffDailyRoles[dayDate][alloc.staff_name] > 1;
+                            const multiRoleIcon = isMultiRole ? `<span title="Assigned to multiple roles today" style="font-size: 11px; margin-left: 4px; cursor: help;">⚠️</span>` : '';
+                            
+                            let shiftTimeHTML = '';
+                            if (alloc.shift_time) {
+                                shiftTimeHTML = `<div class="shift-time">🕒 ${alloc.shift_time}</div>`;
+                            }
+
+                            let statusBadge = '';
+                            if (alloc.status === 'Training') statusBadge = '<div class="status-badge status-training">Training</div>';
+                            else if (alloc.status === 'Assessment') statusBadge = '<div class="status-badge status-assessment">Assessment</div>';
+                            else if (alloc.status === 'Unavailable') statusBadge = '<div class="status-badge status-unavailable">Unavailable</div>';
+                            else if (alloc.status === 'Sick') statusBadge = '<div class="status-badge status-unavailable">Sick</div>';
+
+                            let unavailableClass = (alloc.status === 'Unavailable' || alloc.status === 'Sick') ? ' chip-unavailable' : '';
+                            let wfhIcon = alloc.status === 'WFH' ? '<div class="top-icon" title="Working From Home">🏠</div>' : '';
+                            let sickIcon = alloc.status === 'Sick' ? '<div class="top-icon" title="Sick">🤢</div>' : '';
+                            let trainingIcon = alloc.status === 'Training' ? '<div class="top-icon" title="Training">🧑‍🏫</div>' : '';
+                            let assessmentIcon = alloc.status === 'Assessment' ? '<div class="top-icon" title="Assessment">📋</div>' : '';
+                            let noteIcon = alloc.note ? `<div class="top-icon" title="${alloc.note.replace(/"/g, '&quot;')}">📄</div>` : '';
+
+                            let draggableAttr = previewState.active ? '' : `draggable="true" ondragstart="dragStart(event, '${alloc.entry_id}')"`;
+                            let isSelected = selectedShifts.has(String(alloc.entry_id)) ? ' selected-shift' : '';
+
+                            let chipTitleAttr = '';
+                            if (isAdmin && alloc.last_updated_at) {
+                                const upDate = new Date(alloc.last_updated_at).toLocaleString('en-GB');
+                                const upUser = alloc.last_updated_by ? alloc.last_updated_by.replace(/"/g, '&quot;') : 'System';
+                                chipTitleAttr = `title="Last updated by ${upUser} on ${upDate}"`;
+                            }
+
+                            cellHTML += `
+                                <div class="${chipClass}${unavailableClass}${previewClasses}${isSelected}" style="${chipStyle}" ${draggableAttr} ${chipTitleAttr} data-entry-id="${alloc.entry_id}" data-status="${alloc.status || 'Normal'}" data-note="${(alloc.note || '').replace(/"/g, '&quot;')}" data-staff-name="${alloc.staff_name.replace(/"/g, '&quot;')}">
+                                    <div class="chip-header">
+                                        <div class="staff-name">${alloc.staff_name}${multiRoleIcon}</div>
+                                        <div class="top-right-icons">
+                                            ${wfhIcon}
+                                            ${sickIcon}
+                                            ${trainingIcon}
+                                            ${assessmentIcon}
+                                            ${noteIcon}
+                                            ${!previewState.active ? `<button class="delete-btn" onclick="deleteShift('${alloc.entry_id}')" title="Remove Shift">✖</button>` : ''}
+                                        </div>
+                                    </div>
+                                    ${statusBadge}
+                                    ${shiftTimeHTML}
+                                    ${assignedTasksHTML}
+                                    ${previewControls}
                                 </div>
-                                `;
-                            }).join('') + `</div>`;
+                            `;
+                        });
                     }
 
-                    const isMultiRole = staffDailyRoles[dayDate][alloc.staff_name] > 1;
-                    const multiRoleIcon = isMultiRole ? `<span title="Assigned to multiple roles today" style="font-size: 11px; margin-left: 4px; cursor: help;">⚠️</span>` : '';
-                    
-                    let shiftTimeHTML = '';
-                    if (alloc.shift_time) {
-                        shiftTimeHTML = `<div class="shift-time">🕒 ${alloc.shift_time}</div>`;
-                    }
-
-                    let statusBadge = '';
-                    if (alloc.status === 'Training') statusBadge = '<div class="status-badge status-training">Training</div>';
-                    else if (alloc.status === 'Assessment') statusBadge = '<div class="status-badge status-assessment">Assessment</div>';
-                    else if (alloc.status === 'Unavailable') statusBadge = '<div class="status-badge status-unavailable">Unavailable</div>';
-                    else if (alloc.status === 'Sick') statusBadge = '<div class="status-badge status-unavailable">Sick</div>';
-
-                    let unavailableClass = (alloc.status === 'Unavailable' || alloc.status === 'Sick') ? ' chip-unavailable' : '';
-                    let wfhIcon = alloc.status === 'WFH' ? '<div class="top-icon" title="Working From Home">🏠</div>' : '';
-                    let sickIcon = alloc.status === 'Sick' ? '<div class="top-icon" title="Sick">🤢</div>' : '';
-                    let trainingIcon = alloc.status === 'Training' ? '<div class="top-icon" title="Training">🧑‍🏫</div>' : '';
-                    let assessmentIcon = alloc.status === 'Assessment' ? '<div class="top-icon" title="Assessment">📋</div>' : '';
-                    let noteIcon = alloc.note ? `<div class="top-icon" title="${alloc.note.replace(/"/g, '&quot;')}">📄</div>` : '';
-
-                    let draggableAttr = previewState.active ? '' : `draggable="true" ondragstart="dragStart(event, '${alloc.entry_id}')"`;
-                    let isSelected = selectedShifts.has(String(alloc.entry_id)) ? ' selected-shift' : '';
-
-                    cellHTML += `
-                        <div class="${chipClass}${unavailableClass}${previewClasses}${isSelected}" style="${chipStyle}" ${draggableAttr} data-entry-id="${alloc.entry_id}" data-status="${alloc.status || 'Normal'}" data-note="${(alloc.note || '').replace(/"/g, '&quot;')}" data-staff-name="${alloc.staff_name.replace(/"/g, '&quot;')}">
-                            <div class="chip-header">
-                                <div class="staff-name">${alloc.staff_name}${multiRoleIcon}</div>
-                                <div class="top-right-icons">
-                                    ${wfhIcon}
-                                    ${sickIcon}
-                                    ${trainingIcon}
-                                    ${assessmentIcon}
-                                    ${noteIcon}
-                                    ${!previewState.active ? `<button class="delete-btn" onclick="deleteShift('${alloc.entry_id}')" title="Remove Shift">✖</button>` : ''}
-                                </div>
-                            </div>
-                            ${statusBadge}
-                            ${shiftTimeHTML}
-                            ${assignedTasksHTML}
-                            ${previewControls}
-                        </div>
-                    `;
-                    });
-                }
-
-                cellHTML += `</div>`;
-                grid.innerHTML += cellHTML;
+                    cellHTML += `</div>`;
+                    grid.innerHTML += cellHTML;
+                });
             });
         });
 
@@ -1558,11 +1671,13 @@ async function deleteShift(entryId) {
     if(!isAdmin) return;
     
     const entryIds = selectedShifts.has(String(entryId)) ? Array.from(selectedShifts) : [entryId];
-    const msg = entryIds.length > 1 
-        ? `Are you sure you want to remove these ${entryIds.length} staff members from their shifts?` 
-        : `Are you sure you want to remove this staff member from this shift?`;
-        
-    if (!await customConfirm(msg)) return;
+    
+    if (entryIds.length > 1) {
+        const confirmed = await confirmMultiSelection(entryIds, 'delete assignments completely');
+        if (!confirmed) return;
+    } else {
+        if (!await customConfirm('Are you sure you want to remove this staff member from this shift?')) return;
+    }
     
     try {
         const promises = entryIds.map(id => fetch(`/api/roster/shift/${id}`, { method: 'DELETE' }));
@@ -1663,6 +1778,27 @@ async function deleteTask(taskId, ev, groupId) {
 // --- HTML5 DRAG AND DROP FUNCTIONS ---
 function dragStart(ev, entryId) {
     if(!isAdmin) { ev.preventDefault(); return; }
+
+    const draggedChip = document.querySelector(`[data-entry-id='${entryId}']`);
+    let entryIdsToMove = [entryId];
+    if (selectedShifts.has(String(entryId))) {
+        entryIdsToMove = Array.from(selectedShifts).filter(id => !String(id).startsWith('empty|'));
+    }
+
+    if (entryIdsToMove.length > 1) {
+        const container = document.createElement('div');
+        container.style.position = 'absolute';
+        container.style.left = '-1000px'; // Position off-screen
+        container.style.opacity = '0.7';
+        entryIdsToMove.forEach(id => {
+            const chip = document.querySelector(`[data-entry-id='${id}']`);
+            if (chip) container.appendChild(chip.cloneNode(true));
+        });
+        document.body.appendChild(container);
+        ev.dataTransfer.setDragImage(container, 0, 0);
+        setTimeout(() => document.body.removeChild(container), 0);
+    }
+
     ev.dataTransfer.setData("application/json", JSON.stringify({ type: 'shift', entry_id: entryId }));
 }
 
@@ -1771,72 +1907,98 @@ async function drop(ev) {
     if (data.type === 'shift') {
         const draggedEntryId = data.entry_id;
         const draggedChip = document.querySelector(`[data-entry-id='${draggedEntryId}']`);
-
-        if (dropzone && draggedChip) {
-            const isSameDropzone = dropzone.isSameNode(draggedChip.parentElement);
+        if (!dropzone || !draggedChip) return;
+        
+        const newRole = dropzone.getAttribute('data-role');
+        const dropDate = dropzone.getAttribute('data-date');
+        const targetTaskSignature = dropzone.getAttribute('data-task-signature');
+        
+        let entryIdsToMove = [draggedEntryId];
+        if (selectedShifts.has(String(draggedEntryId))) {
+            entryIdsToMove = Array.from(selectedShifts).filter(id => !String(id).startsWith('empty|'));
+        }
+        
+        const isSingleMoveSameDropzone = entryIdsToMove.length === 1 && dropzone.isSameNode(draggedChip.parentElement);
+        
+        if (isSingleMoveSameDropzone) {
+            if (targetShiftChip && draggedEntryId !== targetShiftChip.getAttribute('data-entry-id')) {
+                const rect = targetShiftChip.getBoundingClientRect();
+                const isAfter = ev.clientY > rect.top + rect.height / 2;
+                if (isAfter) dropzone.insertBefore(draggedChip, targetShiftChip.nextSibling);
+                else dropzone.insertBefore(draggedChip, targetShiftChip);
+            } else if (!targetShiftChip) {
+                dropzone.appendChild(draggedChip);
+            }
             
-            if (isSameDropzone) {
-                // Reorder within the same dropzone
-                if (targetShiftChip && draggedEntryId !== targetShiftChip.getAttribute('data-entry-id')) {
-                    const rect = targetShiftChip.getBoundingClientRect();
-                    const isAfter = ev.clientY > rect.top + rect.height / 2;
-                    if (isAfter) {
-                        dropzone.insertBefore(draggedChip, targetShiftChip.nextSibling);
-                    } else {
-                        dropzone.insertBefore(draggedChip, targetShiftChip);
+            const newOrderChips = Array.from(dropzone.querySelectorAll('.allocation-chip'));
+            const entryIds = newOrderChips.map(c => c.getAttribute('data-entry-id'));
+            
+            try {
+                await fetch('/api/roster/shift/reorder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entry_ids: entryIds }) });
+            } catch (e) {
+                await customAlert('Error saving the new order.');
+            }
+            loadRoster();
+            return;
+        }
+        
+        if (newRole && dropDate) {
+            const selectedDates = new Set();
+            entryIdsToMove.forEach(id => {
+                const chip = document.querySelector(`[data-entry-id='${id}']`);
+                if (chip) {
+                    const srcDropzone = chip.closest('.dropzone');
+                    if(srcDropzone) {
+                        selectedDates.add(srcDropzone.getAttribute('data-date'));
                     }
-                } else if (!targetShiftChip) {
-                    // Dropped on the empty space of the dropzone, move to the end
-                    dropzone.appendChild(draggedChip);
                 }
-                
-                const newOrderChips = Array.from(dropzone.querySelectorAll('.allocation-chip'));
-                const entryIds = newOrderChips.map(c => c.getAttribute('data-entry-id'));
-                
-                try {
-                    const response = await fetch('/api/roster/shift/reorder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entry_ids: entryIds }) });
-                    if (!response.ok) await customAlert('Failed to save the new order.'); 
-                } catch (e) {
-                    await customAlert('Error saving the new order.');
-                }
-                loadRoster();
-                return;
-            } else {
-                // Move to a different dropzone entirely
-                const newRole = dropzone.getAttribute('data-role');
-                const newDate = dropzone.getAttribute('data-date');
-                
-                if (draggedEntryId && newRole && newDate) {
-                    // Position it precisely where dropped so we can calculate the order accurately
-                    if (targetShiftChip) {
-                        const rect = targetShiftChip.getBoundingClientRect();
-                        const isAfter = ev.clientY > rect.top + rect.height / 2;
-                        if (isAfter) {
-                            dropzone.insertBefore(draggedChip, targetShiftChip.nextSibling);
-                        } else {
-                            dropzone.insertBefore(draggedChip, targetShiftChip);
-                        }
-                    } else {
-                        dropzone.appendChild(draggedChip);
-                    }
+            });
+            const isMultiDayDrag = selectedDates.size > 1;
 
-                    const response = await fetch('/api/roster/shift/move', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ entry_id: draggedEntryId, new_date: newDate, new_shift_title: newRole })
-                    });
-                    
-                    if (response.ok) {
-                        const newOrderChips = Array.from(dropzone.querySelectorAll('.allocation-chip'));
-                        const entryIds = newOrderChips.map(c => c.getAttribute('data-entry-id'));
-                        await fetch('/api/roster/shift/reorder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entry_ids: entryIds }) });
-                        loadRoster();
-                    } else {
-                        const result = await response.json();
-                        await customAlert(result.error || 'Failed to move shift.');
-                        loadRoster();
-                    }
+            if (entryIdsToMove.length > 1) {
+                const confirmed = await confirmMultiSelection(entryIdsToMove, `move assignments to ${newRole}`);
+                if (!confirmed) {
+                    loadRoster(); 
+                    return;
                 }
+            }
+
+            let allOk = true;
+            let firstError = null;
+
+            for (const id of entryIdsToMove) {
+                const chip = document.querySelector(`[data-entry-id='${id}']`);
+                const srcDropzone = chip ? chip.closest('.dropzone') : null;
+                if (!srcDropzone) continue;
+
+                const srcSignature = srcDropzone.getAttribute('data-task-signature');
+                const originalDate = srcDropzone.getAttribute('data-date');
+                
+                const dateForThisMove = isMultiDayDrag ? originalDate : dropDate;
+
+                const response = await fetch('/api/roster/shift/move', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        entry_id: id, 
+                        new_date: dateForThisMove, 
+                        new_shift_title: newRole,
+                        source_task: srcSignature,
+                        target_task: targetTaskSignature
+                    })
+                });
+
+                if (!response.ok) {
+                    allOk = false;
+                    if (!firstError) firstError = await response.json();
+                }
+            }
+            
+            if (allOk) {
+                loadRoster();
+            } else {
+                await customAlert(firstError.error || 'Failed to move one or more shifts.');
+                loadRoster();
             }
         }
         return;
@@ -2258,18 +2420,30 @@ document.addEventListener('contextmenu', (e) => {
         }
         
         if (shiftChip) {
-            const currentStatus = shiftChip.getAttribute('data-status');
-            document.getElementById('cm-status-training').innerHTML = (currentStatus === 'Training' ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'Training';
-            document.getElementById('cm-status-assessment').innerHTML = (currentStatus === 'Assessment' ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'Assessment';
-            document.getElementById('cm-status-unavailable').innerHTML = (currentStatus === 'Unavailable' ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'Unavailable';
-            document.getElementById('cm-status-wfh').innerHTML = (currentStatus === 'WFH' ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'WFH';
-            const sickEl = document.getElementById('cm-status-sick');
-            if (sickEl) sickEl.innerHTML = (currentStatus === 'Sick' ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'Sick';
+            const entryIds = getAffectedShifts(shiftChip);
+            const validIds = entryIds.filter(id => !String(id).startsWith('empty|'));
+            const selectedElements = validIds.map(id => document.querySelector(`[data-entry-id='${id}']`)).filter(Boolean);
 
-            const currentNote = shiftChip.getAttribute('data-note') || '';
+            const checkAllHaveStatus = (status) => {
+                if (selectedElements.length === 0) return false;
+                return selectedElements.every(el => el.getAttribute('data-status') === status);
+            };
+
+            document.getElementById('cm-status-training').innerHTML = (checkAllHaveStatus('Training') ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'Training';
+            document.getElementById('cm-status-assessment').innerHTML = (checkAllHaveStatus('Assessment') ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'Assessment';
+            document.getElementById('cm-status-unavailable').innerHTML = (checkAllHaveStatus('Unavailable') ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'Unavailable';
+            document.getElementById('cm-status-wfh').innerHTML = (checkAllHaveStatus('WFH') ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'WFH';
+            const sickEl = document.getElementById('cm-status-sick');
+            if (sickEl) sickEl.innerHTML = (checkAllHaveStatus('Sick') ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'Sick';
+
             const noteEl = document.getElementById('cm-shift-note');
             if (noteEl) {
-                noteEl.innerText = currentNote ? 'Edit/Delete Note' : 'Add Note';
+                if (validIds.length > 1) {
+                    noteEl.innerText = 'Set Note for Selection';
+                } else {
+                    const currentNote = shiftChip.getAttribute('data-note') || '';
+                    noteEl.innerText = currentNote ? 'Edit/Delete Note' : 'Add Note';
+                }
             }
 
             const shiftDropzone = shiftChip.closest('.dropzone');
@@ -2327,6 +2501,13 @@ document.addEventListener('click', (e) => {
         menu.style.display = 'none';
     }
 
+        if (!isAdmin) {
+            if (!e.target.closest('.allocation-chip') && !e.target.closest('.task-chip') && !e.target.closest('.assigned-task-tag')) {
+                document.querySelectorAll('.locked-highlight').forEach(el => el.classList.remove('locked-highlight'));
+            }
+            return;
+        }
+
     const shiftChip = e.target.closest('.allocation-chip');
     const emptyChip = e.target.closest('.empty-chip');
     const activeChip = shiftChip || emptyChip;
@@ -2365,6 +2546,72 @@ document.addEventListener('click', (e) => {
             }
         } else {
             clearSelection();
+        }
+    }
+});
+
+document.addEventListener('dblclick', (e) => {
+    const taskChip = e.target.closest('.task-chip, .assigned-task-tag');
+    const shiftChip = e.target.closest('.allocation-chip');
+    
+    if (!isAdmin) {
+        if (taskChip) {
+            const groupId = taskChip.getAttribute('data-task-group-id');
+            if (groupId && groupId !== 'null' && groupId !== '') {
+                const isLocked = taskChip.classList.contains('locked-highlight');
+                document.querySelectorAll(`[data-task-group-id="${groupId}"]`).forEach(el => {
+                    isLocked ? el.classList.remove('locked-highlight') : el.classList.add('locked-highlight');
+                });
+            }
+            window.getSelection().removeAllRanges();
+            return;
+        }
+        
+        if (shiftChip) {
+            const staffName = shiftChip.getAttribute('data-staff-name');
+            if (staffName) {
+                const isLocked = shiftChip.classList.contains('locked-highlight');
+                document.querySelectorAll('.allocation-chip').forEach(chip => {
+                    if (chip.getAttribute('data-staff-name') === staffName) {
+                        isLocked ? chip.classList.remove('locked-highlight') : chip.classList.add('locked-highlight');
+                    }
+                });
+            }
+            window.getSelection().removeAllRanges();
+            return;
+        }
+    } else {
+        if (shiftChip) {
+            const staffName = shiftChip.getAttribute('data-staff-name');
+            if (staffName) {
+                if (!e.shiftKey) clearSelection();
+                document.querySelectorAll('.allocation-chip').forEach(chip => {
+                    if (chip.getAttribute('data-staff-name') === staffName) {
+                        const entryId = chip.getAttribute('data-entry-id');
+                        selectedShifts.add(String(entryId));
+                        setSelectionVisuals(entryId, true);
+                    }
+                });
+            }
+            window.getSelection().removeAllRanges();
+            return;
+        }
+        
+        if (taskChip) {
+            const taskName = taskChip.getAttribute('data-task-name');
+            if (taskName) {
+                if (!e.shiftKey) clearSelection();
+                document.querySelectorAll('.allocation-chip').forEach(chip => {
+                    const hasTask = Array.from(chip.querySelectorAll('.assigned-task-tag')).some(t => t.getAttribute('data-task-name') === taskName);
+                    if (hasTask) {
+                        const entryId = chip.getAttribute('data-entry-id');
+                        selectedShifts.add(String(entryId));
+                        setSelectionVisuals(entryId, true);
+                    }
+                });
+            }
+            window.getSelection().removeAllRanges();
+            return;
         }
     }
 });
@@ -2447,16 +2694,23 @@ async function handleCmPaste() {
 
 async function handleCmStatusToggle(statusClicked) {
     if (cmTarget.shiftChip) {
-        const entryIds = getAffectedShifts(cmTarget.shiftChip);
-        const validIds = entryIds.filter(id => !String(id).startsWith('empty|'));
+        const validIds = getAffectedShifts(cmTarget.shiftChip).filter(id => !String(id).startsWith('empty|'));
         if (validIds.length === 0) return;
         
-        const isSingle = validIds.length === 1;
-        const currentStatus = cmTarget.shiftChip.getAttribute('data-status');
-        const newStatus = (isSingle && currentStatus === statusClicked) ? 'Normal' : statusClicked;
+        if (validIds.length > 1) {
+            const confirmed = await confirmMultiSelection(validIds, `toggle status to ${statusClicked}`);
+            if (!confirmed) return;
+        }
+        
+        const selectedElements = validIds.map(id => document.querySelector(`[data-entry-id='${id}']`)).filter(Boolean);
+        const allHaveStatus = selectedElements.every(el => el.getAttribute('data-status') === statusClicked);
+
+        const newStatus = allHaveStatus ? 'Normal' : statusClicked;
 
         const promises = validIds.map(id => fetch('/api/roster/shift/status', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entry_id: id, status: newStatus })
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entry_id: id, status: newStatus })
         }));
         await Promise.all(promises);
         clearSelection();
@@ -2466,23 +2720,37 @@ async function handleCmStatusToggle(statusClicked) {
 
 function handleCmNoteAction() {
     if (cmTarget && cmTarget.shiftChip) {
-        const entryId = cmTarget.shiftChip.getAttribute('data-entry-id');
-        const currentNote = cmTarget.shiftChip.getAttribute('data-note') || '';
-        handleCmNote(entryId, currentNote);
+        handleCmNote();
     }
 }
 
-async function handleCmNote(entryId, currentNote) {
+async function handleCmNote() {
     if (!isAdmin) return;
-    const entryIds = selectedShifts.has(String(entryId)) ? Array.from(selectedShifts) : [entryId];
+    const entryIds = getAffectedShifts(cmTarget.shiftChip).filter(id => !String(id).startsWith('empty|'));
+    if (entryIds.length === 0) return;
+
+    if (entryIds.length > 1) {
+        const confirmed = await confirmMultiSelection(entryIds, `add/edit notes`);
+        if (!confirmed) return;
+    }
+
+    const selectedElements = entryIds.map(id => document.querySelector(`[data-entry-id='${id}']`)).filter(Boolean);
+    const allNotes = selectedElements.map(el => el.getAttribute('data-note') || '');
+    const firstNote = allNotes[0] || '';
+    const allSameNote = allNotes.every(note => note === firstNote);
+
     const msg = entryIds.length > 1 
         ? `Enter note for ${entryIds.length} selected shifts (leave blank to delete):`
         : "Enter note (leave blank to delete):";
         
-    const newNote = await customPrompt(msg, currentNote);
+    const defaultNote = (entryIds.length > 1 && !allSameNote) ? '' : firstNote;
+
+    const newNote = await customPrompt(msg, defaultNote);
     if (newNote !== null) {
         const promises = entryIds.map(id => fetch('/api/roster/shift/note', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entry_id: id, note: newNote.trim() })
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entry_id: id, note: newNote.trim() })
         }));
         await Promise.all(promises);
         clearSelection();
@@ -2580,6 +2848,12 @@ async function handleCmAssignTask(taskName, duration, color, groupId) {
         const entryIds = getAffectedShifts(cmTarget.shiftChip);
         const validIds = entryIds.filter(id => !String(id).startsWith('empty|'));
         if (validIds.length === 0) return;
+        
+        if (validIds.length > 1) {
+            const confirmed = await confirmMultiSelection(validIds, `assign task '${taskName}'`);
+            if (!confirmed) return;
+        }
+        
         const promises = validIds.map(id => fetch('/api/roster/shift/task', {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entry_id: id, task_name: taskName, duration: duration, color: color, group_id: groupId || null })
         }));
@@ -2777,7 +3051,7 @@ document.addEventListener('mouseout', (e) => {
 
 const dynamicStyle = document.createElement('style');
 dynamicStyle.innerHTML = `
-    .linked-task-hover {
+    .linked-task-hover, .locked-highlight {
         box-shadow: 0 0 0 2px #ecc94b, 0 0 8px 2px rgba(236, 201, 75, 0.6) !important;
         filter: brightness(1.1);
         transform: scale(1.03);
@@ -2785,6 +3059,12 @@ dynamicStyle.innerHTML = `
         z-index: 10;
         position: relative;
     }
+        .task-indicator-text {
+            color: #fff;
+        }
+        .light-theme .task-indicator-text {
+            color: #2d3748;
+        }
     .selected-shift {
         box-shadow: 0 0 0 3px #63b3ed, 0 0 8px 2px rgba(99, 179, 237, 0.8) !important;
         filter: brightness(1.1);
@@ -2803,7 +3083,7 @@ dynamicStyle.innerHTML = `
         background-color: #4a5568 !important;
     }
     .dt-header.collapsed {
-        grid-column: span 8;
+        grid-column: span 9 !important;
     }
     .tasks-cell.collapsed {
         display: none;

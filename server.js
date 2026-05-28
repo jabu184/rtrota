@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io');
+const os = require('os');
 
 if (!fs.existsSync('uploads')) {
     fs.mkdirSync('uploads', { recursive: true });
@@ -165,6 +166,8 @@ try { db.exec("ALTER TABLE roster_entries ADD COLUMN display_order INTEGER DEFAU
 try { db.exec("ALTER TABLE staff ADD COLUMN default_task TEXT"); } catch(e) {}
 try { db.exec("ALTER TABLE roster_entries ADD COLUMN note TEXT"); } catch(e) {}
 try { db.exec("ALTER TABLE daily_tasks ADD COLUMN display_order INTEGER DEFAULT 0"); } catch(e) {}
+try { db.exec("ALTER TABLE roster_entries ADD COLUMN last_updated_at TEXT"); } catch(e) {}
+try { db.exec("ALTER TABLE roster_entries ADD COLUMN last_updated_by TEXT"); } catch(e) {}
 
 // --- FIX DANGLING FOREIGN KEYS ---
 try {
@@ -253,7 +256,8 @@ function addDays(dateStr, days) {
 }
 
 // Helper to apply default tasks and re-attach orphaned tasks
-function applyDefaultTasks(isImport = false) {
+function applyDefaultTasks(isImport = false, coveredDates = null, rosterType = null) {
+    if (coveredDates !== null && coveredDates.length === 0) return;
     try {
         const getShifts = db.prepare(`
             SELECT r.id, s.default_task 
@@ -266,7 +270,20 @@ function applyDefaultTasks(isImport = false) {
         const checkExisting = db.prepare('SELECT id FROM shift_tasks WHERE entry_id = ? AND task_name = ?');
 
         // 1. Re-attach orphaned tasks (Missing Assignments)
-        const orphanedTasks = db.prepare(`SELECT * FROM daily_tasks WHERE shift_title IS NOT NULL`).all();
+        let orphanedQueryStr = `SELECT * FROM daily_tasks WHERE shift_title IS NOT NULL`;
+        let orphanedParams = [];
+        
+        if (coveredDates && coveredDates.length > 0) {
+             const placeholders = coveredDates.map(() => '?').join(',');
+             orphanedQueryStr += ` AND date IN (${placeholders})`;
+             orphanedParams.push(...coveredDates);
+        }
+        if (rosterType) {
+             orphanedQueryStr += ` AND roster_type = ?`;
+             orphanedParams.push(rosterType);
+        }
+        
+        const orphanedTasks = db.prepare(orphanedQueryStr).all(...orphanedParams);
         orphanedTasks.forEach(t => {
             const shifts = getShifts.all(t.date, t.shift_title, t.roster_type || 'QA');
             if (shifts.length > 0) {
@@ -282,12 +299,26 @@ function applyDefaultTasks(isImport = false) {
 
         // 2. Assign default tasks to any staff if the task exists on that day
         if (isImport) {
-            const entriesWithDefaults = db.prepare(`
+            let queryStr = `
                 SELECT r.id, r.date, r.roster_type, s.default_task, r.staff_id, r.shift_title
                 FROM roster_entries r
                 JOIN staff s ON r.staff_id = s.id
                 WHERE s.default_task IS NOT NULL AND s.default_task != ''
-            `).all();
+            `;
+            let params = [];
+
+            if (coveredDates && coveredDates.length > 0) {
+                const placeholders = coveredDates.map(() => '?').join(',');
+                queryStr += ` AND r.date IN (${placeholders})`;
+                params.push(...coveredDates);
+            }
+            
+            if (rosterType) {
+                queryStr += ` AND r.roster_type = ?`;
+                params.push(rosterType);
+            }
+
+            const entriesWithDefaults = db.prepare(queryStr).all(...params);
 
             const getTaskDetails = db.prepare(`
                 SELECT task_name, duration, color, group_id FROM daily_tasks WHERE date = ? AND task_name = ? AND roster_type = ?
@@ -319,16 +350,27 @@ function autoGroupTasksBackend(rosterType = 'QA', startDate = null, endDate = nu
     try {
         let entries, tasks;
         if (startDate && endDate) {
-            entries = db.prepare(`SELECT r.id, r.date, r.shift_title, s.name FROM roster_entries r JOIN staff s ON r.staff_id = s.id WHERE r.date BETWEEN ? AND ? AND r.roster_type = ?`).all(startDate, endDate, rosterType);
+            entries = db.prepare(`SELECT r.id, r.date, r.shift_title, r.display_order, s.name FROM roster_entries r JOIN staff s ON r.staff_id = s.id WHERE r.date BETWEEN ? AND ? AND r.roster_type = ?`).all(startDate, endDate, rosterType);
             tasks = db.prepare(`SELECT entry_id, task_name FROM shift_tasks WHERE entry_id IN (SELECT id FROM roster_entries WHERE date BETWEEN ? AND ? AND roster_type = ?)`).all(startDate, endDate, rosterType);
         } else {
-            entries = db.prepare(`SELECT r.id, r.date, r.shift_title, s.name FROM roster_entries r JOIN staff s ON r.staff_id = s.id WHERE r.roster_type = ?`).all(rosterType);
+            entries = db.prepare(`SELECT r.id, r.date, r.shift_title, r.display_order, s.name FROM roster_entries r JOIN staff s ON r.staff_id = s.id WHERE r.roster_type = ?`).all(rosterType);
             tasks = db.prepare(`SELECT entry_id, task_name FROM shift_tasks WHERE entry_id IN (SELECT id FROM roster_entries WHERE roster_type = ?)`).all(rosterType);
         }
         
-        const taskRanks = db.prepare('SELECT task_name, MIN(display_order) as rank FROM daily_tasks GROUP BY task_name').all();
+        let taskRanks;
+        if (startDate && endDate) {
+            taskRanks = db.prepare('SELECT task_name, date FROM daily_tasks WHERE shift_title IS NULL AND date BETWEEN ? AND ? AND roster_type = ? ORDER BY date ASC, display_order ASC, id ASC').all(startDate, endDate, rosterType);
+        } else {
+            taskRanks = db.prepare('SELECT task_name, date FROM daily_tasks WHERE shift_title IS NULL AND roster_type = ? ORDER BY date ASC, display_order ASC, id ASC').all(rosterType);
+        }
+        
         const rankMap = {};
-        taskRanks.forEach(r => rankMap[r.task_name] = r.rank);
+        taskRanks.forEach(r => {
+            if (!rankMap[r.date]) rankMap[r.date] = {};
+            if (rankMap[r.date][r.task_name] === undefined) {
+                rankMap[r.date][r.task_name] = Object.keys(rankMap[r.date]).length;
+            }
+        });
 
         const taskAssignmentMap = {};
         tasks.forEach(t => {
@@ -341,23 +383,27 @@ function autoGroupTasksBackend(rosterType = 'QA', startDate = null, endDate = nu
             const key = e.date + '|' + e.shift_title;
             if (!grouped[key]) grouped[key] = [];
             e.assigned_tasks = taskAssignmentMap[e.id] || [];
-            e.assigned_tasks.sort((a, b) => {
-                const rankA = rankMap[a] !== undefined ? rankMap[a] : 999;
-                const rankB = rankMap[b] !== undefined ? rankMap[b] : 999;
-                if (rankA !== rankB) return rankA - rankB;
-                return a.localeCompare(b);
-            });
-            e.taskStr = e.assigned_tasks.join(',');
             grouped[key].push(e);
         });
         
         const update = db.prepare('UPDATE roster_entries SET display_order = ? WHERE id = ?');
         db.transaction(() => {
             Object.values(grouped).forEach(group => {
-                group.sort((a, b) => { 
-                    if (a.taskStr && !b.taskStr) return -1; 
-                    if (!a.taskStr && b.taskStr) return 1; 
-                    if (a.taskStr !== b.taskStr) return a.taskStr.localeCompare(b.taskStr); 
+                group.sort((a, b) => {
+                    if (a.assigned_tasks.length > 0 && b.assigned_tasks.length === 0) return -1;
+                    if (a.assigned_tasks.length === 0 && b.assigned_tasks.length > 0) return 1;
+                    
+                    if (a.assigned_tasks.length > 0 && b.assigned_tasks.length > 0) {
+                        const taskA = a.assigned_tasks[0];
+                        const taskB = b.assigned_tasks[0];
+                        if (taskA !== taskB) {
+                            const rankA = (rankMap[a.date] && rankMap[a.date][taskA] !== undefined) ? rankMap[a.date][taskA] : 999;
+                            const rankB = (rankMap[b.date] && rankMap[b.date][taskB] !== undefined) ? rankMap[b.date][taskB] : 999;
+                            if (rankA !== rankB) return rankA - rankB;
+                            return taskA.localeCompare(taskB);
+                        }
+                    }
+                    
                     return a.name.localeCompare(b.name); 
                 });
                 group.forEach((e, idx) => update.run(idx, e.id));
@@ -638,23 +684,27 @@ app.post('/api/upload', upload.single('roster'), (req, res) => {
         const insertStaff = db.prepare('INSERT OR IGNORE INTO staff (name) VALUES (?)');
         const getStaff = db.prepare('SELECT id FROM staff WHERE name = ?');
         const insertEntry = db.prepare(`
-            INSERT INTO roster_entries (staff_id, date, shift_title, shift_time, roster_type)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO roster_entries (staff_id, date, shift_title, shift_time, roster_type, last_updated_at, last_updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(staff_id, date, shift_title, roster_type) DO UPDATE SET
-                shift_time = excluded.shift_time
+                shift_time = excluded.shift_time,
+                last_updated_at = excluded.last_updated_at,
+                last_updated_by = excluded.last_updated_by
         `);
 
         const transaction = db.transaction((entries) => {
+            const ts = new Date().toISOString();
+            const un = os.userInfo().username || 'Unknown';
             for (const e of entries) {
                 insertStaff.run(e.staffName);
                 const staffRow = getStaff.get(e.staffName);
-                insertEntry.run(staffRow.id, e.targetDate, e.shiftTitle, e.shiftTime, rosterType);
+                insertEntry.run(staffRow.id, e.targetDate, e.shiftTitle, e.shiftTime, rosterType, ts, un);
                 recordsImported++;
             }
         });
 
         transaction(entriesToInsert);
-        applyDefaultTasks(true);
+        applyDefaultTasks(true, coveredDatesArr, rosterType);
         autoGroupTasksBackend(rosterType);
 
         if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
@@ -732,23 +782,28 @@ app.post('/api/upload/apply', (req, res) => {
         const insertStaff = db.prepare('INSERT OR IGNORE INTO staff (name) VALUES (?)');
         const getStaff = db.prepare('SELECT id FROM staff WHERE name = ?');
         const insertEntry = db.prepare(`
-            INSERT INTO roster_entries (staff_id, date, shift_title, shift_time, roster_type)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO roster_entries (staff_id, date, shift_title, shift_time, roster_type, last_updated_at, last_updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(staff_id, date, shift_title, roster_type) DO UPDATE SET
-                shift_time = excluded.shift_time
+                shift_time = excluded.shift_time,
+                last_updated_at = excluded.last_updated_at,
+                last_updated_by = excluded.last_updated_by
         `);
 
         const transaction = db.transaction((entries) => {
+            const ts = new Date().toISOString();
+            const un = os.userInfo().username || 'Unknown';
             for (const e of entries) {
                 insertStaff.run(e.staff_name);
                 const staffRow = getStaff.get(e.staff_name);
-                insertEntry.run(staffRow.id, e.date, e.shift_title, e.shift_time || '', rosterType);
+                insertEntry.run(staffRow.id, e.date, e.shift_title, e.shift_time || '', rosterType, ts, un);
                 recordsImported++;
             }
         });
 
         transaction(added || []);
-        applyDefaultTasks(true);
+        const affectedDates = [...new Set((added || []).map(a => a.date))];
+        applyDefaultTasks(true, affectedDates, rosterType);
         autoGroupTasksBackend(rosterType);
 
         res.json({
@@ -885,6 +940,10 @@ app.post('/api/database/import', upload.single('database'), (req, res) => {
                 uploadedDb.exec("ALTER TABLE roster_entries ADD COLUMN note TEXT");
             }
         } catch(e) {}
+        try {
+            const schema = uploadedDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='roster_entries'").get();
+            if (schema && !schema.sql.includes('last_updated_at')) { uploadedDb.exec("ALTER TABLE roster_entries ADD COLUMN last_updated_at TEXT"); uploadedDb.exec("ALTER TABLE roster_entries ADD COLUMN last_updated_by TEXT"); }
+        } catch(e) {}
 
         try {
             const schemaStaff = uploadedDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='staff'").get();
@@ -900,7 +959,7 @@ app.post('/api/database/import', upload.single('database'), (req, res) => {
             db.prepare('DELETE FROM empty_shift_metadata WHERE roster_type = ?').run(rosterType);
 
             const importEntries = uploadedDb.prepare('SELECT * FROM roster_entries WHERE roster_type = ?').all(rosterType);
-            const insertEntry = db.prepare('INSERT INTO roster_entries (staff_id, date, shift_title, shift_time, status, note, roster_type, display_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+            const insertEntry = db.prepare('INSERT INTO roster_entries (staff_id, date, shift_title, shift_time, status, note, roster_type, display_order, last_updated_at, last_updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             const insertStaff = db.prepare('INSERT OR IGNORE INTO staff (name, role_category, default_task) VALUES (?, ?, ?)');
             const updateStaffDefault = db.prepare('UPDATE staff SET default_task = ? WHERE name = ? AND default_task IS NULL');
             const getStaffByName = db.prepare('SELECT id FROM staff WHERE name = ?');
@@ -912,7 +971,7 @@ app.post('/api/database/import', upload.single('database'), (req, res) => {
                     insertStaff.run(staffInUpload.name, staffInUpload.role_category, staffInUpload.default_task);
                     if (staffInUpload.default_task) updateStaffDefault.run(staffInUpload.default_task, staffInUpload.name);
                     const localStaff = getStaffByName.get(staffInUpload.name);
-                    const result = insertEntry.run(localStaff.id, e.date, e.shift_title, e.shift_time, e.status, e.note, e.roster_type, e.display_order);
+                    const result = insertEntry.run(localStaff.id, e.date, e.shift_title, e.shift_time, e.status, e.note, e.roster_type, e.display_order, e.last_updated_at, e.last_updated_by);
                     entryIdMap[e.id] = result.lastInsertRowid;
                 }
             }
@@ -1032,7 +1091,7 @@ app.get('/api/roster', (req, res) => {
 
     // Added r.id as 'entry_id' so the front-end can target rows for on-the-fly modifications
     const data = db.prepare(`
-        SELECT r.id as entry_id, r.date, r.shift_title, r.shift_time, r.status, r.note, r.display_order, s.name as staff_name, s.role_category
+        SELECT r.id as entry_id, r.date, r.shift_title, r.shift_time, r.status, r.note, r.display_order, r.last_updated_at, r.last_updated_by, s.name as staff_name, s.role_category
         FROM roster_entries r
         JOIN staff s ON r.staff_id = s.id
         WHERE r.date BETWEEN ? AND ? AND r.roster_type = ?
@@ -1044,6 +1103,15 @@ app.get('/api/roster', (req, res) => {
         const placeholders = entryIds.map(() => '?').join(',');
         const tasks = db.prepare(`SELECT * FROM shift_tasks WHERE entry_id IN (${placeholders})`).all(...entryIds);
         
+        const taskRanks = db.prepare('SELECT task_name, date FROM daily_tasks WHERE shift_title IS NULL AND date BETWEEN ? AND ? AND roster_type = ? ORDER BY date ASC, display_order ASC, id ASC').all(startDate, endDate, rosterType);
+        const rankMap = {};
+        taskRanks.forEach(r => {
+            if (!rankMap[r.date]) rankMap[r.date] = {};
+            if (rankMap[r.date][r.task_name] === undefined) {
+                rankMap[r.date][r.task_name] = Object.keys(rankMap[r.date]).length;
+            }
+        });
+
         const taskMap = {};
         tasks.forEach(t => {
             if (!taskMap[t.entry_id]) taskMap[t.entry_id] = [];
@@ -1051,7 +1119,14 @@ app.get('/api/roster', (req, res) => {
         });
         
         data.forEach(d => {
-            d.assigned_tasks = taskMap[d.entry_id] || [];
+            const dayTasks = taskMap[d.entry_id] || [];
+            dayTasks.sort((a, b) => {
+                const rankA = (rankMap[d.date] && rankMap[d.date][a.task_name] !== undefined) ? rankMap[d.date][a.task_name] : 999;
+                const rankB = (rankMap[d.date] && rankMap[d.date][b.task_name] !== undefined) ? rankMap[d.date][b.task_name] : 999;
+                if (rankA !== rankB) return rankA - rankB;
+                return a.task_name.localeCompare(b.task_name);
+            });
+            d.assigned_tasks = dayTasks;
         });
     } else {
         data.forEach(d => d.assigned_tasks = []);
@@ -1065,8 +1140,8 @@ app.post('/api/roster/shift', (req, res) => {
     const { entry_id, new_shift_title } = req.body;
     
     try {
-        const update = db.prepare('UPDATE roster_entries SET shift_title = ? WHERE id = ?');
-        const result = update.run(new_shift_title, entry_id);
+        const update = db.prepare('UPDATE roster_entries SET shift_title = ?, last_updated_at = ?, last_updated_by = ? WHERE id = ?');
+        const result = update.run(new_shift_title, new Date().toISOString(), os.userInfo().username || 'Unknown', entry_id);
         
         if (result.changes > 0) {
             res.json({ success: true, message: 'Shift role updated successfully.' });
@@ -1083,7 +1158,7 @@ app.post('/api/roster/shift', (req, res) => {
 app.post('/api/roster/shift/time', (req, res) => {
     const { entry_id, new_shift_time } = req.body;
     try {
-        db.prepare('UPDATE roster_entries SET shift_time = ? WHERE id = ?').run(new_shift_time, entry_id);
+        db.prepare('UPDATE roster_entries SET shift_time = ?, last_updated_at = ?, last_updated_by = ? WHERE id = ?').run(new_shift_time, new Date().toISOString(), os.userInfo().username || 'Unknown', entry_id);
         res.json({ success: true, message: 'Shift time updated successfully.' });
     } catch (err) {
         console.error(err);
@@ -1095,7 +1170,7 @@ app.post('/api/roster/shift/time', (req, res) => {
 app.post('/api/roster/shift/status', (req, res) => {
     const { entry_id, status } = req.body;
     try {
-        db.prepare('UPDATE roster_entries SET status = ? WHERE id = ?').run(status, entry_id);
+        db.prepare('UPDATE roster_entries SET status = ?, last_updated_at = ?, last_updated_by = ? WHERE id = ?').run(status, new Date().toISOString(), os.userInfo().username || 'Unknown', entry_id);
         res.json({ success: true, message: 'Shift status updated successfully.' });
     } catch (err) {
         console.error(err);
@@ -1107,7 +1182,7 @@ app.post('/api/roster/shift/status', (req, res) => {
 app.post('/api/roster/shift/note', (req, res) => {
     const { entry_id, note } = req.body;
     try {
-        db.prepare('UPDATE roster_entries SET note = ? WHERE id = ?').run(note, entry_id);
+        db.prepare('UPDATE roster_entries SET note = ?, last_updated_at = ?, last_updated_by = ? WHERE id = ?').run(note, new Date().toISOString(), os.userInfo().username || 'Unknown', entry_id);
         res.json({ success: true, message: 'Shift note updated successfully.' });
     } catch (err) {
         console.error(err);
@@ -1123,9 +1198,9 @@ app.post('/api/roster/shift/duplicate', (req, res) => {
         if (!source) return res.status(404).json({ error: 'Source shift not found.' });
         
         db.prepare(`
-            INSERT INTO roster_entries (staff_id, date, shift_title, shift_time, status, roster_type)
-            VALUES (?, ?, ?, ?, ?, ?)
-        `).run(source.staff_id, new_date, new_shift_title, source.shift_time, source.status, source.roster_type);
+            INSERT INTO roster_entries (staff_id, date, shift_title, shift_time, status, roster_type, last_updated_at, last_updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(source.staff_id, new_date, new_shift_title, source.shift_time, source.status, source.roster_type, new Date().toISOString(), os.userInfo().username || 'Unknown');
         res.json({ success: true });
     } catch (err) {
         console.error(err);
@@ -1143,7 +1218,7 @@ app.post('/api/roster/shift/swap', (req, res) => {
     try {
         const staff = db.prepare('SELECT id FROM staff WHERE name = ?').get(new_staff_name);
         if (!staff) return res.status(404).json({ error: 'Staff not found.' });
-        db.prepare('UPDATE roster_entries SET staff_id = ? WHERE id = ?').run(staff.id, entry_id);
+        db.prepare('UPDATE roster_entries SET staff_id = ?, last_updated_at = ?, last_updated_by = ? WHERE id = ?').run(staff.id, new Date().toISOString(), os.userInfo().username || 'Unknown', entry_id);
         res.json({ success: true });
     } catch (err) {
         if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
@@ -1156,19 +1231,63 @@ app.post('/api/roster/shift/swap', (req, res) => {
 
 // --- API: MOVE SHIFT VIA DRAG AND DROP ---
 app.post('/api/roster/shift/move', (req, res) => {
-    const { entry_id, new_date, new_shift_title } = req.body;
+    const { entry_id, new_date, new_shift_title, source_task, target_task } = req.body;
     try {
-        const update = db.prepare('UPDATE roster_entries SET date = ?, shift_title = ? WHERE id = ?');
-        const result = update.run(new_date, new_shift_title, entry_id);
-        
-        if (result.changes > 0) {
-            applyDefaultTasks();
-            res.json({ success: true, message: 'Shift moved successfully.' });
-        } else {
-            res.status(404).json({ error: 'Roster entry not found.' });
-        }
+        let changesMade = false;
+        db.transaction(() => {
+            const update = db.prepare('UPDATE roster_entries SET date = ?, shift_title = ?, last_updated_at = ?, last_updated_by = ? WHERE id = ?');
+            const result = update.run(new_date, new_shift_title, new Date().toISOString(), os.userInfo().username || 'Unknown', entry_id);
+            
+            if (result.changes > 0) {
+                changesMade = true;
+                if (source_task && target_task && source_task !== target_task) {
+                    const rosterType = db.prepare('SELECT roster_type FROM roster_entries WHERE id = ?').get(entry_id).roster_type;
+
+                    const assignedTasks = db.prepare('SELECT id, task_name FROM shift_tasks WHERE entry_id = ?').all(entry_id);
+                    
+                    if (assignedTasks.length > 0) {
+                        const taskRanks = db.prepare('SELECT task_name FROM daily_tasks WHERE shift_title IS NULL AND date = ? AND roster_type = ? ORDER BY display_order ASC, id ASC').all(new_date, rosterType);
+                        const rankMap = {};
+                        taskRanks.forEach((r, i) => { rankMap[r.task_name] = i; });
+
+                        assignedTasks.sort((a, b) => {
+                            const rankA = rankMap[a.task_name] !== undefined ? rankMap[a.task_name] : 999;
+                            const rankB = rankMap[b.task_name] !== undefined ? rankMap[b.task_name] : 999;
+                            if (rankA !== rankB) return rankA - rankB;
+                            return a.task_name.localeCompare(b.task_name);
+                        });
+
+                        const firstTask = assignedTasks[0];
+                        if (firstTask.task_name === source_task) {
+                             db.prepare('DELETE FROM shift_tasks WHERE id = ?').run(firstTask.id);
+                        }
+                    }
+                    
+                    if (target_task !== 'Unassigned') {
+                        const taskDetailsQuery = `
+                            SELECT color, duration, group_id FROM (
+                                SELECT color, duration, group_id, 1 as p FROM daily_tasks WHERE date = ? AND task_name = ? AND roster_type = ? AND shift_title IS NULL
+                                UNION ALL
+                                SELECT st.color, st.duration, st.group_id, 2 as p FROM shift_tasks st JOIN roster_entries re ON st.entry_id = re.id WHERE re.date = ? AND st.task_name = ? AND re.roster_type = ?
+                            ) ORDER BY p ASC LIMIT 1
+                        `;
+                        const taskDetails = db.prepare(taskDetailsQuery).get(new_date, target_task, rosterType, new_date, target_task, rosterType);
+
+                        if (taskDetails) {
+                             const existing = db.prepare('SELECT id FROM shift_tasks WHERE entry_id = ? AND task_name = ?').get(entry_id, target_task);
+                             if (!existing) {
+                                db.prepare('INSERT INTO shift_tasks (entry_id, task_name, duration, color, group_id) VALUES (?, ?, ?, ?, ?)').run(entry_id, target_task, taskDetails.duration, taskDetails.color, taskDetails.group_id);
+                             }
+                        }
+                    }
+                }
+                applyDefaultTasks();
+            }
+        })();
+
+        if (changesMade) res.json({ success: true, message: 'Shift moved successfully.' });
+        else res.status(404).json({ error: 'Roster entry not found.' });
     } catch (err) {
-        console.error(err);
         // The database schema prevents duplicate identical roles for the same staff member on the exact same date
         if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
             res.status(400).json({ error: 'Staff member is already scheduled for this specific role on this date.' });
@@ -1238,10 +1357,21 @@ app.post('/api/tasks/move-vertical', (req, res) => {
 
         db.transaction(() => {
             for (const date of datesToUpdate) {
-                const tasksOnDay = db.prepare('SELECT id FROM daily_tasks WHERE date = ? AND roster_type = ? ORDER BY display_order ASC, id ASC').all(date, task.roster_type);
+                let tasksOnDay;
+                if (!task.shift_title) {
+                    tasksOnDay = db.prepare('SELECT id FROM daily_tasks WHERE date = ? AND roster_type = ? AND shift_title IS NULL ORDER BY display_order ASC, id ASC').all(date, task.roster_type);
+                } else {
+                    tasksOnDay = db.prepare('SELECT id FROM daily_tasks WHERE date = ? AND roster_type = ? AND shift_title = ? ORDER BY display_order ASC, id ASC').all(date, task.roster_type, task.shift_title);
+                }
                 const idsOnDay = tasksOnDay.map(t => t.id);
                 
-                const taskToMoveOnThisDay = db.prepare('SELECT id FROM daily_tasks WHERE date = ? AND task_name = ? AND roster_type = ?').get(date, task.task_name, task.roster_type);
+                let taskToMoveOnThisDay;
+                if (!task.shift_title) {
+                    taskToMoveOnThisDay = db.prepare('SELECT id FROM daily_tasks WHERE date = ? AND task_name = ? AND roster_type = ? AND shift_title IS NULL').get(date, task.task_name, task.roster_type);
+                } else {
+                    taskToMoveOnThisDay = db.prepare('SELECT id FROM daily_tasks WHERE date = ? AND task_name = ? AND roster_type = ? AND shift_title = ?').get(date, task.task_name, task.roster_type, task.shift_title);
+                }
+                
                 if (!taskToMoveOnThisDay) continue;
 
                 const currentIndex = idsOnDay.indexOf(taskToMoveOnThisDay.id);
@@ -1351,6 +1481,7 @@ app.post('/api/roster/shift/task', (req, res) => {
         }
 
         db.prepare('INSERT INTO shift_tasks (entry_id, task_name, duration, color, group_id) VALUES (?, ?, ?, ?, ?)').run(entry_id, task_name, duration, color, group_id);
+        try { db.prepare('UPDATE roster_entries SET last_updated_at = ?, last_updated_by = ? WHERE id = ?').run(new Date().toISOString(), os.userInfo().username || 'Unknown', entry_id); } catch(e) {}
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'Failed to assign task to shift.' });
@@ -1512,12 +1643,13 @@ app.delete('/api/tasks/:id', (req, res) => {
 app.delete('/api/roster/shift/task/:id', (req, res) => {
     try {
         const mode = req.query.mode || 'single';
-        const shiftTask = db.prepare('SELECT group_id FROM shift_tasks WHERE id = ?').get(req.params.id);
+        const shiftTask = db.prepare('SELECT entry_id, group_id FROM shift_tasks WHERE id = ?').get(req.params.id);
         if (mode === 'all' && shiftTask && shiftTask.group_id) {
             db.prepare('DELETE FROM shift_tasks WHERE group_id = ?').run(shiftTask.group_id);
             db.prepare('DELETE FROM daily_tasks WHERE group_id = ?').run(shiftTask.group_id);
         } else {
             db.prepare('DELETE FROM shift_tasks WHERE id = ?').run(req.params.id);
+            if (shiftTask) { try { db.prepare('UPDATE roster_entries SET last_updated_at = ?, last_updated_by = ? WHERE id = ?').run(new Date().toISOString(), os.userInfo().username || 'Unknown', shiftTask.entry_id); } catch(e) {} }
         }
         res.json({ success: true });
     } catch (err) {
@@ -1654,9 +1786,9 @@ app.post('/api/roster/shift/assign', (req, res) => {
         const staff = db.prepare('SELECT id FROM staff WHERE name = ?').get(staff_name);
         if (!staff) return res.status(404).json({ error: 'Staff not found.' });
         db.prepare(`
-            INSERT INTO roster_entries (staff_id, date, shift_title, shift_time, roster_type)
-            VALUES (?, ?, ?, '', ?)
-        `).run(staff.id, date, shift_title, rosterType);
+            INSERT INTO roster_entries (staff_id, date, shift_title, shift_time, roster_type, last_updated_at, last_updated_by)
+            VALUES (?, ?, ?, '', ?, ?, ?)
+        `).run(staff.id, date, shift_title, rosterType, new Date().toISOString(), os.userInfo().username || 'Unknown');
         applyDefaultTasks();
         res.json({ success: true });
     } catch (err) {
@@ -1856,7 +1988,7 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'An unexpected server error occurred.' });
 });
 
-const PORT = process.env.PORT || 3002;
+const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
     console.log(`QA Roster Server running on port ${PORT}`);
 });
