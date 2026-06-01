@@ -196,32 +196,6 @@ try {
 } catch (err) {
     console.error("FK fix error:", err);
 }
-
-    // --- AUTO-HEAL FRACTURED GROUP IDs ---
-    try {
-        const uniqueTaskNames = db.prepare(`
-            SELECT DISTINCT task_name, roster_type FROM (
-                SELECT task_name, roster_type FROM daily_tasks WHERE task_name IS NOT NULL
-                UNION
-                SELECT st.task_name, re.roster_type FROM shift_tasks st JOIN roster_entries re ON st.entry_id = re.id WHERE st.task_name IS NOT NULL
-            )
-        `).all();
-        db.transaction(() => {
-            const updateDaily = db.prepare("UPDATE daily_tasks SET group_id = ? WHERE task_name = ? AND roster_type IS ?");
-            const updateShift = db.prepare("UPDATE shift_tasks SET group_id = ? WHERE task_name = ? AND entry_id IN (SELECT id FROM roster_entries WHERE roster_type IS ?)");
-            
-            for (const t of uniqueTaskNames) {
-                const existing = db.prepare("SELECT group_id FROM daily_tasks WHERE task_name = ? AND roster_type IS ? AND group_id IS NOT NULL LIMIT 1").get(t.task_name, t.roster_type);
-                const unifiedGroupId = existing ? existing.group_id : Date.now().toString() + Math.random().toString(36).substring(2, 7);
-                
-                updateDaily.run(unifiedGroupId, t.task_name, t.roster_type);
-                updateShift.run(unifiedGroupId, t.task_name, t.roster_type);
-            }
-        })();
-        console.log("--> Fractured task links successfully synchronized.");
-    } catch (err) {
-        console.error("Task link healing error:", err);
-    }
 }
 
 initDatabase();
@@ -1340,6 +1314,68 @@ app.post('/api/tasks', (req, res) => {
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'Failed to add task.' });
+    }
+});
+
+// --- API: LINK/UNLINK SINGLE TASKS BY NAME ---
+app.post('/api/tasks/link', (req, res) => {
+    const { task_name, rosterType = 'QA' } = req.body;
+    try {
+        db.transaction(() => {
+            const existingDaily = db.prepare("SELECT group_id FROM daily_tasks WHERE task_name = ? AND roster_type = ? AND group_id IS NOT NULL LIMIT 1").get(task_name, rosterType);
+            const existingShift = db.prepare("SELECT st.group_id FROM shift_tasks st JOIN roster_entries re ON st.entry_id = re.id WHERE st.task_name = ? AND re.roster_type = ? AND st.group_id IS NOT NULL LIMIT 1").get(task_name, rosterType);
+            
+            const unifiedGroupId = (existingDaily && existingDaily.group_id) || (existingShift && existingShift.group_id) || Date.now().toString() + Math.random().toString(36).substring(2, 7);
+            
+            db.prepare("UPDATE daily_tasks SET group_id = ? WHERE task_name = ? AND roster_type = ?").run(unifiedGroupId, task_name, rosterType);
+            db.prepare("UPDATE shift_tasks SET group_id = ? WHERE task_name = ? AND entry_id IN (SELECT id FROM roster_entries WHERE roster_type = ?)").run(unifiedGroupId, task_name, rosterType);
+        })();
+        res.json({ success: true, message: 'Tasks with the same name have been successfully linked.' });
+    } catch (err) {
+        console.error("Task link error:", err);
+        res.status(500).json({ error: 'Failed to link tasks.' });
+    }
+});
+
+app.post('/api/tasks/link-all', (req, res) => {
+    const { rosterType = 'QA' } = req.body;
+    try {
+        const uniqueTaskNames = db.prepare(`
+            SELECT DISTINCT task_name FROM (
+                SELECT task_name FROM daily_tasks WHERE task_name IS NOT NULL AND roster_type = ?
+                UNION
+                SELECT st.task_name FROM shift_tasks st JOIN roster_entries re ON st.entry_id = re.id WHERE st.task_name IS NOT NULL AND re.roster_type = ?
+            )
+        `).all(rosterType, rosterType);
+        db.transaction(() => {
+            const updateDaily = db.prepare("UPDATE daily_tasks SET group_id = ? WHERE task_name = ? AND roster_type = ?");
+            const updateShift = db.prepare("UPDATE shift_tasks SET group_id = ? WHERE task_name = ? AND entry_id IN (SELECT id FROM roster_entries WHERE roster_type = ?)");
+            for (const t of uniqueTaskNames) {
+                const existing = db.prepare("SELECT group_id FROM daily_tasks WHERE task_name = ? AND roster_type = ? AND group_id IS NOT NULL LIMIT 1").get(t.task_name, rosterType);
+                const unifiedGroupId = existing ? existing.group_id : Date.now().toString() + Math.random().toString(36).substring(2, 7);
+                updateDaily.run(unifiedGroupId, t.task_name, rosterType);
+                updateShift.run(unifiedGroupId, t.task_name, rosterType);
+            }
+        })();
+        res.json({ success: true, message: 'All tasks with the same name have been successfully linked.' });
+    } catch (err) {
+        console.error("Task link error:", err);
+        res.status(500).json({ error: 'Failed to link all tasks.' });
+    }
+});
+
+app.post('/api/tasks/unlink', (req, res) => {
+    const { task_id, task_type } = req.body;
+    try {
+        if (task_type === 'daily') {
+            db.prepare("UPDATE daily_tasks SET group_id = NULL WHERE id = ?").run(task_id);
+        } else if (task_type === 'assigned') {
+            db.prepare("UPDATE shift_tasks SET group_id = NULL WHERE id = ?").run(task_id);
+        }
+        res.json({ success: true, message: 'Task unlinked successfully.' });
+    } catch (err) {
+        console.error("Task unlink error:", err);
+        res.status(500).json({ error: 'Failed to unlink task.' });
     }
 });
 

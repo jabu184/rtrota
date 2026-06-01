@@ -140,6 +140,61 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         menu.appendChild(setTimeItem);
     }
+        
+        if (menu && !document.getElementById('cm-task-links-wrapper')) {
+            const oldLink = document.getElementById('cm-task-link');
+            if (oldLink && oldLink.parentElement === menu) oldLink.remove();
+            const oldUnlink = document.getElementById('cm-task-unlink');
+            if (oldUnlink && oldUnlink.parentElement === menu) oldUnlink.remove();
+
+            const linkSubmenuWrapper = document.createElement('div');
+            linkSubmenuWrapper.className = 'cm-item cm-task has-submenu';
+            linkSubmenuWrapper.id = 'cm-task-links-wrapper';
+            linkSubmenuWrapper.innerHTML = 'Link Tasks ➔<div class="cm-submenu" id="cm-task-link-submenu"></div>';
+            menu.appendChild(linkSubmenuWrapper);
+
+            const linkSubmenu = document.getElementById('cm-task-link-submenu');
+
+            const linkItem = document.createElement('div');
+            linkItem.className = 'cm-item';
+            linkItem.id = 'cm-task-link';
+            linkItem.innerText = 'Link This Task (By Name)';
+            linkItem.onclick = handleCmLinkTask;
+            linkSubmenu.appendChild(linkItem);
+            
+            const linkAllItem = document.createElement('div');
+            linkAllItem.className = 'cm-item';
+            linkAllItem.id = 'cm-task-link-all';
+            linkAllItem.innerText = 'Link ALL Tasks';
+            linkAllItem.onclick = handleCmLinkAllTasks;
+            linkSubmenu.appendChild(linkAllItem);
+
+            const unlinkItem = document.createElement('div');
+            unlinkItem.className = 'cm-item';
+            unlinkItem.id = 'cm-task-unlink';
+            unlinkItem.innerText = 'Unlink Task';
+            unlinkItem.onclick = handleCmUnlinkTask;
+            linkSubmenu.appendChild(unlinkItem);
+        }
+
+        const colorItem1 = document.getElementById('cm-task-color1');
+        if (colorItem1 && colorItem1.parentElement === menu) {
+            const colorSubmenuWrapper = document.createElement('div');
+            colorSubmenuWrapper.className = 'cm-item cm-task has-submenu';
+            colorSubmenuWrapper.id = 'cm-task-colors-wrapper';
+            colorSubmenuWrapper.innerHTML = 'Color ➔<div class="cm-submenu" id="cm-task-color-submenu"></div>';
+            
+            menu.insertBefore(colorSubmenuWrapper, colorItem1);
+            const colorSubmenu = document.getElementById('cm-task-color-submenu');
+            
+            for (let i = 1; i <= 11; i++) {
+                const el = document.getElementById(`cm-task-color${i}`);
+                if (el) {
+                    el.classList.remove('cm-task');
+                    colorSubmenu.appendChild(el);
+                }
+            }
+        }
 
     document.querySelectorAll('button').forEach(btn => {
         if (btn.getAttribute('onclick') === 'clearWeeklyTasks()') {
@@ -193,8 +248,13 @@ async function toggleAdmin() {
         
         await customAlert('Logged out. Read-only mode enabled.');
     } else {
-        const pwd = await customPrompt('Enter Admin Password:');
-        if(pwd === 'admin') {
+        const pwd = await showModal({
+            title: 'Input Required',
+            type: 'prompt',
+            message: 'Enter Admin Password:',
+            inputType: 'password'
+        });
+        if (pwd === 'admin') {
             isAdmin = true;
             document.body.classList.remove('read-only');
             document.getElementById('adminBtn').innerText = 'Logout Admin';
@@ -240,7 +300,12 @@ async function promptUpdateIndexHtml() {
         const file = e.target.files[0];
         if (!file) return;
         
-        const pwd = await customPrompt(`DANGER: Enter Admin Password to confirm updating index.html with "${file.name}":`);
+        const pwd = await showModal({
+            title: 'Input Required',
+            type: 'prompt',
+            message: `DANGER: Enter Admin Password to confirm updating index.html with "${file.name}":`,
+            inputType: 'password'
+        });
         if (pwd !== 'admin') {
             if (pwd !== null) await customAlert('Incorrect password.');
             return;
@@ -293,7 +358,7 @@ function showModal(options) {
         let inputEl = null;
         if (options.type === 'prompt') {
             inputEl = document.createElement('input');
-            inputEl.type = 'text';
+            inputEl.type = options.inputType || 'text';
             inputEl.className = 'modal-input';
             inputEl.value = options.defaultValue || '';
             inputContainer.appendChild(inputEl);
@@ -1221,7 +1286,7 @@ function getRoleColor(roleName) {
     }
     const hue = Math.abs(hash % 360);
     if (isLightTheme) {
-        return `background: hsl(${hue}, 70%, 90%) !important; border-color: hsl(${hue}, 70%, 80%); border-left: 4px solid hsl(${hue}, 70%, 60%);`;
+        return `background: hsl(${hue}, 65%, 82%) !important; border-color: hsl(${hue}, 65%, 60%) !important; border-left: 4px solid hsl(${hue}, 70%, 45%) !important; color: #1a202c !important;`;
     }
     return `background: hsl(${hue}, 40%, 25%) !important; border-color: hsl(${hue}, 40%, 35%); border-left: 4px solid hsl(${hue}, 60%, 50%);`;
 }
@@ -2401,12 +2466,19 @@ document.addEventListener('contextmenu', (e) => {
                 }
             } else if (!taskChip) {
                 el.style.display = 'none';
-            } else if (isAssignedTask && el.id !== 'cm-task-am' && el.id !== 'cm-task-pm' && el.id !== 'cm-task-allday') {
+            } else if (isAssignedTask && !['cm-task-am', 'cm-task-pm', 'cm-task-allday', 'cm-task-links-wrapper', 'cm-task-colors-wrapper'].includes(el.id)) {
                 el.style.display = 'none';
             } else {
                 el.style.display = 'block';
             }
         });
+        
+        if (taskChip) {
+            const groupId = taskChip.getAttribute('data-task-group-id');
+            const hasGroup = groupId && groupId !== 'null' && groupId !== '';
+            const unlinkEl = document.getElementById('cm-task-unlink');
+            if (unlinkEl) unlinkEl.style.display = hasGroup ? 'block' : 'none';
+        }
         
         const cmEmptyItems = document.querySelectorAll('.cm-empty');
         cmEmptyItems.forEach(el => el.style.display = emptyChip ? 'block' : 'none');
@@ -2495,6 +2567,75 @@ document.addEventListener('contextmenu', (e) => {
     }
 });
 
+async function handleCmLinkTask() {
+    if (cmTarget && cmTarget.taskChip) {
+        const taskName = cmTarget.taskChip.getAttribute('data-task-name');
+        if (!await customConfirm(`Link all tasks named "${taskName}" in the ${currentRoster} roster together?`)) return;
+
+        try {
+            const response = await fetch('/api/tasks/link', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_name: taskName, rosterType: currentRoster })
+            });
+            if (response.ok) {
+                loadRoster();
+            } else {
+                await customAlert('Failed to link tasks.');
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    }
+}
+
+async function handleCmLinkAllTasks() {
+    if (!isAdmin) return;
+    
+    if (!await customConfirm(`Are you sure you want to link ALL tasks with the same name together for the ${currentRoster} roster? This means editing one instance will prompt to edit all.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/tasks/link-all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rosterType: currentRoster })
+        });
+        const result = await response.json();
+        if (result.success) {
+            await customAlert(result.message);
+            loadRoster();
+        } else {
+            await customAlert(result.error || 'Failed to link all tasks.');
+        }
+    } catch (err) {
+        console.error(err);
+        await customAlert('Error linking tasks.');
+    }
+}
+
+async function handleCmUnlinkTask() {
+    if (cmTarget && cmTarget.taskChip) {
+        const taskId = cmTarget.taskChip.getAttribute('data-task-id');
+        const taskType = cmTarget.taskChip.getAttribute('data-task-type');
+
+        try {
+            const response = await fetch('/api/tasks/unlink', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_id: taskId, task_type: taskType })
+            });
+            if (response.ok) {
+                loadRoster();
+            } else {
+                await customAlert('Failed to unlink task.');
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    }
+}
 document.addEventListener('click', (e) => {
     const menu = document.getElementById('contextMenu');
     if (menu && menu.style.display === 'block') {
@@ -3051,6 +3192,29 @@ document.addEventListener('mouseout', (e) => {
 
 const dynamicStyle = document.createElement('style');
 dynamicStyle.innerHTML = `
+    /* --- Light Theme High-Contrast Enhancements --- */
+    body.light-theme {
+        background-color: #e2e8f0;
+        color: #1a202c;
+    }
+    .light-theme .grid-header {
+        background-color: #cbd5e0 !important;
+        border-bottom-color: #a0aec0 !important;
+        color: #1a202c !important;
+    }
+    .light-theme .grid-header span {
+        color: #4a5568 !important;
+    }
+    .light-theme img, 
+    .light-theme .logo {
+        /* Inverts white logos to a dark color for visibility on light backgrounds */
+        filter: invert(1) hue-rotate(180deg) brightness(0.2) contrast(1.2) !important;
+    }
+    .light-theme .task-chip, 
+    .light-theme .assigned-task-tag {
+        color: #1a202c !important;
+        border: 1px solid rgba(0,0,0,0.2) !important;
+    }
     .linked-task-hover, .locked-highlight {
         box-shadow: 0 0 0 2px #ecc94b, 0 0 8px 2px rgba(236, 201, 75, 0.6) !important;
         filter: brightness(1.1);
