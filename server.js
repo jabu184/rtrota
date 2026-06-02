@@ -106,6 +106,13 @@ db.exec(`
     roster_type TEXT DEFAULT 'QA',
     PRIMARY KEY(date, shift_title, roster_type)
   );
+
+  CREATE TABLE IF NOT EXISTS published_weeks (
+    week_commencing TEXT,
+    roster_type TEXT,
+    is_published INTEGER DEFAULT 0,
+    PRIMARY KEY(week_commencing, roster_type)
+  );
 `);
 
 // --- AUTOMATIC SCHEMA MIGRATION ---
@@ -790,6 +797,27 @@ app.post('/api/upload/apply', (req, res) => {
     }
 });
 
+// --- API: PUBLISHED WEEKS ---
+app.get('/api/published', (req, res) => {
+    const { startDate, endDate, rosterType = 'QA' } = req.query;
+    const data = db.prepare(`SELECT * FROM published_weeks WHERE week_commencing BETWEEN ? AND ? AND roster_type = ?`).all(startDate, endDate, rosterType);
+    res.json(data);
+});
+
+app.post('/api/published', (req, res) => {
+    const { week_commencing, is_published, rosterType = 'QA' } = req.body;
+    try {
+        db.prepare(`
+            INSERT INTO published_weeks (week_commencing, roster_type, is_published)
+            VALUES (?, ?, ?)
+            ON CONFLICT(week_commencing, roster_type) DO UPDATE SET is_published = excluded.is_published
+        `).run(week_commencing, rosterType, is_published);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update publish status.' });
+    }
+});
+
 // --- API: DATABASE EXPORT/IMPORT ---
 app.get('/api/database/export', (req, res) => {
     const { rosterType = 'QA' } = req.query;
@@ -805,6 +833,7 @@ app.get('/api/database/export', (req, res) => {
         tempDb.prepare('DELETE FROM roster_entries WHERE roster_type != ?').run(rosterType);
         tempDb.prepare('DELETE FROM daily_tasks WHERE roster_type != ?').run(rosterType);
         tempDb.prepare('DELETE FROM empty_shift_metadata WHERE roster_type != ?').run(rosterType);
+        try { tempDb.prepare('DELETE FROM published_weeks WHERE roster_type != ?').run(rosterType); } catch(e) {}
         tempDb.prepare('DELETE FROM shift_tasks WHERE entry_id NOT IN (SELECT id FROM roster_entries)').run();
         tempDb.exec('VACUUM;');
         tempDb.close();
@@ -931,6 +960,7 @@ app.post('/api/database/import', upload.single('database'), (req, res) => {
             db.prepare('DELETE FROM roster_entries WHERE roster_type = ?').run(rosterType);
             db.prepare('DELETE FROM daily_tasks WHERE roster_type = ?').run(rosterType);
             db.prepare('DELETE FROM empty_shift_metadata WHERE roster_type = ?').run(rosterType);
+            try { db.prepare('DELETE FROM published_weeks WHERE roster_type = ?').run(rosterType); } catch(e) {}
 
             const importEntries = uploadedDb.prepare('SELECT * FROM roster_entries WHERE roster_type = ?').all(rosterType);
             const insertEntry = db.prepare('INSERT INTO roster_entries (staff_id, date, shift_title, shift_time, status, note, roster_type, display_order, last_updated_at, last_updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
@@ -970,6 +1000,19 @@ app.post('/api/database/import', upload.single('database'), (req, res) => {
             const insertMetadata = db.prepare('INSERT INTO empty_shift_metadata (date, shift_title, comment, is_ignored, manual_add, roster_type) VALUES (?, ?, ?, ?, ?, ?)');
             for (const md of metadata) {
                 insertMetadata.run(md.date, md.shift_title, md.comment, md.is_ignored, md.manual_add, md.roster_type);
+            }
+            
+            try {
+                const schemaPub = uploadedDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='published_weeks'").get();
+                if (schemaPub) {
+                    const pubWeeks = uploadedDb.prepare('SELECT * FROM published_weeks WHERE roster_type = ?').all(rosterType);
+                    const insertPub = db.prepare('INSERT INTO published_weeks (week_commencing, roster_type, is_published) VALUES (?, ?, ?)');
+                    for (const pw of pubWeeks) {
+                        insertPub.run(pw.week_commencing, pw.roster_type, pw.is_published);
+                    }
+                }
+            } catch(e) {
+                console.error("Error importing published_weeks:", e);
             }
         })();
 
@@ -1639,6 +1682,8 @@ app.delete('/api/data/clear', (req, res) => {
             if (type === 'shifts' || type === 'both') {
                 db.prepare(`DELETE FROM roster_entries WHERE roster_type = ?${dateCondition}`).run(...params);
                 db.prepare(`DELETE FROM empty_shift_metadata WHERE roster_type = ?${dateCondition}`).run(...params);
+            const weekCondition = dateCondition.replace(/date/g, 'week_commencing');
+            db.prepare(`DELETE FROM published_weeks WHERE roster_type = ?${weekCondition}`).run(...params);
             }
         })();
         res.json({ success: true });

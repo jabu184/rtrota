@@ -208,6 +208,8 @@ function switchRoster(roster) {
     localStorage.setItem('currentRoster', roster);
     document.getElementById('qaRosterBtn').classList.toggle('active', roster === 'QA');
     document.getElementById('planningRosterBtn').classList.toggle('active', roster === 'Planning');
+    document.getElementById('stereoRosterBtn').classList.toggle('active', roster === 'Stereo');
+    document.getElementById('brachyRosterBtn').classList.toggle('active', roster === 'Brachy');
     document.title = `Radiotherapy ${roster} Section - Clinical Rota Grid`;
     if (isStatsViewActive) {
         const tr = document.getElementById('statsTimeRange');
@@ -643,6 +645,12 @@ async function openDefaultTasksManager() {
 
 async function openStatistics(timeRange = 'all') {
     if (!isAdmin) return;
+    
+    if (typeof Chart === 'undefined') {
+        await customAlert('Chart.js library is missing. Please download it and place it in the public folder to view statistics offline.');
+        return;
+    }
+
     isStatsViewActive = true;
     try {
         const res = await fetch(`/api/statistics?rosterType=${currentRoster}&timeRange=${timeRange}`);
@@ -1255,8 +1263,26 @@ async function loadRoster() {
     const metaResponse = await fetch(`/api/metadata?startDate=${start}&endDate=${end}&rosterType=${currentRoster}`);
     const metaData = await metaResponse.json();
     
-    renderGridDashboard(data, tasksData, metaData);
+    const pubResponse = await fetch(`/api/published?startDate=${start}&endDate=${end}&rosterType=${currentRoster}`);
+    const pubData = await pubResponse.json();
+    
+    renderGridDashboard(data, tasksData, metaData, pubData);
 }
+
+window.togglePublishWeek = async function(wk, isPublished) {
+    if (!isAdmin) return;
+    try {
+        await fetch('/api/published', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ week_commencing: wk, is_published: isPublished ? 1 : 0, rosterType: currentRoster })
+        });
+        // The server socket middleware will automatically push an update to everyone
+    } catch (e) {
+        console.error(e);
+        await customAlert('Failed to update publish status.');
+    }
+};
 
 // Global Helper to get Week Commencing Monday Date for any given calendar date string
 function getMonday(dateStr) {
@@ -1310,7 +1336,7 @@ window.toggleDailyTasks = function() {
     });
 };
 
-function renderGridDashboard(data, tasksData = [], metaData = []) {
+function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) {
     const container = document.getElementById('rotaDashboard');
     container.innerHTML = '';
 
@@ -1406,7 +1432,25 @@ function renderGridDashboard(data, tasksData = [], metaData = []) {
         weekBlock.className = 'week-block';
         
         const displayDate = new Date(wk).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-        weekBlock.innerHTML = `<div class="week-header">Week Commencing: ${displayDate}</div>`;
+        
+        const pubRecord = pubData.find(p => p.week_commencing === wk);
+        const isPublished = pubRecord ? pubRecord.is_published === 1 : false;
+        const isDraft = !isPublished;
+        
+        let headerControls = '';
+        if (isAdmin) {
+            headerControls = `
+                <label style="font-size: 14px; font-weight: normal; margin-left: 20px; cursor: pointer; color: #e2e8f0; display: inline-flex; align-items: center; gap: 5px;">
+                    <input type="checkbox" onchange="togglePublishWeek('${wk}', this.checked)" ${isPublished ? 'checked' : ''} style="cursor: pointer; width: 16px; height: 16px; margin: 0;">
+                    Published
+                </label>
+            `;
+        } else if (isDraft) {
+            headerControls = `<span style="color: #fc8181; font-size: 16px; margin-left: 15px; font-weight: bold;">(DRAFT)</span>`;
+            weekBlock.classList.add('draft-week');
+        }
+        
+        weekBlock.innerHTML = `<div class="week-header" style="display: flex; align-items: center;">Week Commencing: ${displayDate} ${headerControls}</div>`;
 
         const grid = document.createElement('div');
         grid.className = 'rota-grid';
@@ -3263,6 +3307,12 @@ dynamicStyle.innerHTML = `
         padding: 0;
         cursor: help;
         font-size: 12px;
+    }
+    .draft-week .allocation-chip, 
+    .draft-week .task-chip, 
+    .draft-week .assigned-task-tag, 
+    .draft-week .empty-chip {
+        opacity: 0.55 !important;
     }
 `;
 document.head.appendChild(dynamicStyle);

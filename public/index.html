@@ -200,9 +200,12 @@
     
     <div class="control-panel">
         <div class="control-row-main">
-            <div class="roster-toggle-group">
-                <button id="qaRosterBtn" class="roster-toggle-btn active" onclick="switchRoster('QA')">QA Roster</button>
-                <button id="planningRosterBtn" class="roster-toggle-btn" onclick="switchRoster('Planning')">Planning Roster</button>
+            <div class="roster-toggle-group" style="align-items: center;">
+                <span style="color: #cbd5e0; font-weight: bold; margin-left: 8px; margin-right: 8px; font-size: 14px;">Roster:</span>
+                <button id="qaRosterBtn" class="roster-toggle-btn active" onclick="switchRoster('QA')">QA</button>
+                <button id="planningRosterBtn" class="roster-toggle-btn" onclick="switchRoster('Planning')">Planning</button>
+                <button id="stereoRosterBtn" class="roster-toggle-btn" onclick="switchRoster('Stereo')">Stereo</button>
+                <button id="brachyRosterBtn" class="roster-toggle-btn" onclick="switchRoster('Brachy')">Brachy</button>
             </div>
             <div class="sync-panel">
                 <strong>Sync Master Roster: </strong>
@@ -237,7 +240,7 @@
     <div id="rotaDashboard"></div>
     
     <div style="text-align: right; margin-top: 30px; padding-bottom: 10px; color: #a0aec0; font-size: 12px;">
-        Created by James Burnley | Version 1.31
+        Created by James Burnley | Version 1.4
     </div>
 </div>
 
@@ -316,7 +319,7 @@
     <div id="cm-dropzone-add-missing" class="cm-item cm-dropzone" onclick="handleCmAddMissing()">Add Missing Assignment</div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="chart.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="app.js?v=2"></script>
 </body>
