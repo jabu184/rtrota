@@ -5,8 +5,8 @@ const XLSX = require('xlsx');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const { Server } = require('socket.io');
 const os = require('os');
+const { Server } = require('socket.io');
 
 if (!fs.existsSync('uploads')) {
     fs.mkdirSync('uploads', { recursive: true });
@@ -1179,7 +1179,7 @@ app.post('/api/roster/shift', (req, res) => {
     try {
         const targetRosterType = new_shift_title.toUpperCase() === 'QA L' ? 'Universal' : rosterType;
         const update = db.prepare('UPDATE roster_entries SET shift_title = ?, roster_type = ?, last_updated_at = ?, last_updated_by = ? WHERE id = ?');
-        const result = update.run(new_shift_title, targetRosterType, new Date().toISOString(), getUsername(req), entry_id);
+        const result = update.run(new_shift_title, targetRosterType, new Date().toISOString(), os.userInfo().username || 'Unknown', entry_id);
         
         if (result.changes > 0) {
             res.json({ success: true, message: 'Shift role updated successfully.' });
@@ -1239,7 +1239,7 @@ app.post('/api/roster/shift/duplicate', (req, res) => {
         db.prepare(`
             INSERT INTO roster_entries (staff_id, date, shift_title, shift_time, status, roster_type, last_updated_at, last_updated_by)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(source.staff_id, new_date, new_shift_title, source.shift_time, source.status, targetRosterType, new Date().toISOString(), getUsername(req));
+        `).run(source.staff_id, new_date, new_shift_title, source.shift_time, source.status, targetRosterType, new Date().toISOString(), os.userInfo().username || 'Unknown');
         res.json({ success: true });
     } catch (err) {
         console.error(err);
@@ -1276,17 +1276,15 @@ app.post('/api/roster/shift/move', (req, res) => {
         db.transaction(() => {
             const targetRosterType = new_shift_title.toUpperCase() === 'QA L' ? 'Universal' : rosterType;
             const update = db.prepare('UPDATE roster_entries SET date = ?, shift_title = ?, roster_type = ?, last_updated_at = ?, last_updated_by = ? WHERE id = ?');
-            const result = update.run(new_date, new_shift_title, targetRosterType, new Date().toISOString(), getUsername(req), entry_id);
+            const result = update.run(new_date, new_shift_title, targetRosterType, new Date().toISOString(), os.userInfo().username || 'Unknown', entry_id);
             
             if (result.changes > 0) {
                 changesMade = true;
                 if (source_task && target_task && source_task !== target_task) {
-                    const rosterType = db.prepare('SELECT roster_type FROM roster_entries WHERE id = ?').get(entry_id).roster_type;
-
                     const assignedTasks = db.prepare('SELECT id, task_name FROM shift_tasks WHERE entry_id = ?').all(entry_id);
                     
                     if (assignedTasks.length > 0) {
-                        const taskRanks = db.prepare('SELECT task_name FROM daily_tasks WHERE shift_title IS NULL AND date = ? AND roster_type = ? ORDER BY display_order ASC, id ASC').all(new_date, rosterType);
+                        const taskRanks = db.prepare("SELECT task_name FROM daily_tasks WHERE shift_title IS NULL AND date = ? AND roster_type IN (?, 'Universal') ORDER BY display_order ASC, id ASC").all(new_date, rosterType);
                         const rankMap = {};
                         taskRanks.forEach((r, i) => { rankMap[r.task_name] = i; });
 
@@ -1306,9 +1304,9 @@ app.post('/api/roster/shift/move', (req, res) => {
                     if (target_task !== 'Unassigned') {
                         const taskDetailsQuery = `
                             SELECT color, duration, group_id FROM (
-                                SELECT color, duration, group_id, 1 as p FROM daily_tasks WHERE date = ? AND task_name = ? AND roster_type = ? AND shift_title IS NULL
+                                SELECT color, duration, group_id, 1 as p FROM daily_tasks WHERE date = ? AND task_name = ? AND roster_type IN (?, 'Universal') AND shift_title IS NULL
                                 UNION ALL
-                                SELECT st.color, st.duration, st.group_id, 2 as p FROM shift_tasks st JOIN roster_entries re ON st.entry_id = re.id WHERE re.date = ? AND st.task_name = ? AND re.roster_type = ?
+                                SELECT st.color, st.duration, st.group_id, 2 as p FROM shift_tasks st JOIN roster_entries re ON st.entry_id = re.id WHERE re.date = ? AND st.task_name = ? AND re.roster_type IN (?, 'Universal')
                             ) ORDER BY p ASC LIMIT 1
                         `;
                         const taskDetails = db.prepare(taskDetailsQuery).get(new_date, target_task, rosterType, new_date, target_task, rosterType);
@@ -1921,7 +1919,7 @@ app.post('/api/roster/shift/assign', (req, res) => {
         db.prepare(`
             INSERT INTO roster_entries (staff_id, date, shift_title, shift_time, roster_type, last_updated_at, last_updated_by)
             VALUES (?, ?, ?, '', ?, ?, ?)
-        `).run(staff.id, date, shift_title, targetRosterType, new Date().toISOString(), getUsername(req));
+        `).run(staff.id, date, shift_title, targetRosterType, new Date().toISOString(), os.userInfo().username || 'Unknown');
         applyDefaultTasks();
         res.json({ success: true });
     } catch (err) {
