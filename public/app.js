@@ -2096,7 +2096,8 @@ async function drop(ev) {
                         new_date: dateForThisMove, 
                         new_shift_title: newRole,
                         source_task: srcSignature,
-                        target_task: targetTaskSignature
+                        target_task: targetTaskSignature,
+                        rosterType: currentRoster
                     })
                 });
 
@@ -2859,7 +2860,7 @@ async function handleCmPaste() {
         const response = await fetch('/api/roster/shift/duplicate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source_entry_id: clipboardData.entry_id, new_date: newDate, new_shift_title: newRole })
+            body: JSON.stringify({ source_entry_id: clipboardData.entry_id, new_date: newDate, new_shift_title: newRole, rosterType: currentRoster })
         });
         if (response.ok) {
             loadRoster();

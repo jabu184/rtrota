@@ -176,6 +176,24 @@ try { db.exec("ALTER TABLE daily_tasks ADD COLUMN display_order INTEGER DEFAULT 
 try { db.exec("ALTER TABLE roster_entries ADD COLUMN last_updated_at TEXT"); } catch(e) {}
 try { db.exec("ALTER TABLE roster_entries ADD COLUMN last_updated_by TEXT"); } catch(e) {}
 
+try {
+    const qaLCheck = db.prepare("SELECT COUNT(*) as c FROM roster_entries WHERE shift_title = 'QA L' AND roster_type != 'Universal'").get();
+    if (qaLCheck && qaLCheck.c > 0) {
+        console.log("--> Migrating QA L shifts to Universal roster_type...");
+        db.transaction(() => {
+            db.exec("UPDATE roster_entries SET roster_type = 'Universal' WHERE shift_title = 'QA L' AND roster_type = 'QA'");
+            db.exec("DELETE FROM roster_entries WHERE shift_title = 'QA L' AND roster_type != 'Universal'");
+            
+            db.exec("UPDATE empty_shift_metadata SET roster_type = 'Universal' WHERE shift_title = 'QA L' AND roster_type = 'QA'");
+            db.exec("DELETE FROM empty_shift_metadata WHERE shift_title = 'QA L' AND roster_type != 'Universal'");
+            
+            db.exec("UPDATE daily_tasks SET roster_type = 'Universal' WHERE shift_title = 'QA L' AND roster_type = 'QA'");
+            db.exec("DELETE FROM daily_tasks WHERE shift_title = 'QA L' AND roster_type != 'Universal'");
+        })();
+        console.log("--> Migration to Universal QA L successful.");
+    }
+} catch (err) { console.error("Universal QA L migration error:", err); }
+
 // --- FIX DANGLING FOREIGN KEYS ---
 try {
     const stSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='shift_tasks'").get();
@@ -244,7 +262,7 @@ function applyDefaultTasks(isImport = false, coveredDates = null, rosterType = n
             SELECT r.id, s.default_task 
             FROM roster_entries r 
             JOIN staff s ON r.staff_id = s.id 
-            WHERE r.date = ? AND r.shift_title = ? AND r.roster_type = ?
+            WHERE r.date = ? AND r.shift_title = ? AND r.roster_type IN (?, 'Universal')
         `);
         const insertShiftTask = db.prepare('INSERT INTO shift_tasks (entry_id, task_name, duration, color, group_id) VALUES (?, ?, ?, ?, ?)');
         const deleteDailyTask = db.prepare('DELETE FROM daily_tasks WHERE id = ?');
@@ -260,7 +278,7 @@ function applyDefaultTasks(isImport = false, coveredDates = null, rosterType = n
              orphanedParams.push(...coveredDates);
         }
         if (rosterType) {
-             orphanedQueryStr += ` AND roster_type = ?`;
+             orphanedQueryStr += ` AND roster_type IN (?, 'Universal')`;
              orphanedParams.push(rosterType);
         }
         
@@ -295,18 +313,18 @@ function applyDefaultTasks(isImport = false, coveredDates = null, rosterType = n
             }
             
             if (rosterType) {
-                queryStr += ` AND r.roster_type = ?`;
+                queryStr += ` AND r.roster_type IN (?, 'Universal')`;
                 params.push(rosterType);
             }
 
             const entriesWithDefaults = db.prepare(queryStr).all(...params);
 
             const getTaskDetails = db.prepare(`
-                SELECT task_name, duration, color, group_id FROM daily_tasks WHERE date = ? AND task_name = ? AND roster_type = ?
+                SELECT task_name, duration, color, group_id FROM daily_tasks WHERE date = ? AND task_name = ? AND roster_type IN (?, 'Universal')
                 UNION ALL
                 SELECT st.task_name, st.duration, st.color, st.group_id FROM shift_tasks st
                 JOIN roster_entries re ON st.entry_id = re.id
-                WHERE re.date = ? AND st.task_name = ? AND re.roster_type = ?
+                WHERE re.date = ? AND st.task_name = ? AND re.roster_type IN (?, 'Universal')
                 LIMIT 1
             `);
 
@@ -331,18 +349,18 @@ function autoGroupTasksBackend(rosterType = 'QA', startDate = null, endDate = nu
     try {
         let entries, tasks;
         if (startDate && endDate) {
-            entries = db.prepare(`SELECT r.id, r.date, r.shift_title, r.display_order, s.name FROM roster_entries r JOIN staff s ON r.staff_id = s.id WHERE r.date BETWEEN ? AND ? AND r.roster_type = ?`).all(startDate, endDate, rosterType);
-            tasks = db.prepare(`SELECT entry_id, task_name FROM shift_tasks WHERE entry_id IN (SELECT id FROM roster_entries WHERE date BETWEEN ? AND ? AND roster_type = ?)`).all(startDate, endDate, rosterType);
+            entries = db.prepare(`SELECT r.id, r.date, r.shift_title, r.display_order, s.name FROM roster_entries r JOIN staff s ON r.staff_id = s.id WHERE r.date BETWEEN ? AND ? AND r.roster_type IN (?, 'Universal')`).all(startDate, endDate, rosterType);
+            tasks = db.prepare(`SELECT entry_id, task_name FROM shift_tasks WHERE entry_id IN (SELECT id FROM roster_entries WHERE date BETWEEN ? AND ? AND roster_type IN (?, 'Universal'))`).all(startDate, endDate, rosterType);
         } else {
-            entries = db.prepare(`SELECT r.id, r.date, r.shift_title, r.display_order, s.name FROM roster_entries r JOIN staff s ON r.staff_id = s.id WHERE r.roster_type = ?`).all(rosterType);
-            tasks = db.prepare(`SELECT entry_id, task_name FROM shift_tasks WHERE entry_id IN (SELECT id FROM roster_entries WHERE roster_type = ?)`).all(rosterType);
+            entries = db.prepare(`SELECT r.id, r.date, r.shift_title, r.display_order, s.name FROM roster_entries r JOIN staff s ON r.staff_id = s.id WHERE r.roster_type IN (?, 'Universal')`).all(rosterType);
+            tasks = db.prepare(`SELECT entry_id, task_name FROM shift_tasks WHERE entry_id IN (SELECT id FROM roster_entries WHERE roster_type IN (?, 'Universal'))`).all(rosterType);
         }
         
         let taskRanks;
         if (startDate && endDate) {
-            taskRanks = db.prepare('SELECT task_name, date FROM daily_tasks WHERE shift_title IS NULL AND date BETWEEN ? AND ? AND roster_type = ? ORDER BY date ASC, display_order ASC, id ASC').all(startDate, endDate, rosterType);
+            taskRanks = db.prepare('SELECT task_name, date FROM daily_tasks WHERE shift_title IS NULL AND date BETWEEN ? AND ? AND roster_type IN (?, \'Universal\') ORDER BY date ASC, display_order ASC, id ASC').all(startDate, endDate, rosterType);
         } else {
-            taskRanks = db.prepare('SELECT task_name, date FROM daily_tasks WHERE shift_title IS NULL AND roster_type = ? ORDER BY date ASC, display_order ASC, id ASC').all(rosterType);
+            taskRanks = db.prepare('SELECT task_name, date FROM daily_tasks WHERE shift_title IS NULL AND roster_type IN (?, \'Universal\') ORDER BY date ASC, display_order ASC, id ASC').all(rosterType);
         }
         
         const rankMap = {};
@@ -572,16 +590,16 @@ app.post('/api/upload', upload.single('roster'), (req, res) => {
 
         // --- ENHANCED SUMMARY & DELETION LOGIC ---
         const existingEntries = db.prepare(`
-            SELECT r.id, r.date, r.shift_title, r.shift_time, s.name as staffName
+            SELECT r.id, r.date, r.shift_title, r.shift_time, s.name as staffName, r.roster_type
             FROM roster_entries r
             JOIN staff s ON r.staff_id = s.id
-            WHERE r.date IN (${placeholders}) AND r.roster_type = ?
+            WHERE r.date IN (${placeholders}) AND r.roster_type IN (?, 'Universal')
         `).all(...coveredDatesArr, rosterType);
 
         const existingTasks = db.prepare(`
             SELECT entry_id, task_name
             FROM shift_tasks
-            WHERE entry_id IN (SELECT id FROM roster_entries WHERE date IN (${placeholders}) AND roster_type = ?)
+            WHERE entry_id IN (SELECT id FROM roster_entries WHERE date IN (${placeholders}) AND roster_type IN (?, 'Universal'))
         `).all(...coveredDatesArr, rosterType);
 
         const tasksMap = {};
@@ -679,7 +697,8 @@ app.post('/api/upload', upload.single('roster'), (req, res) => {
             for (const e of entries) {
                 insertStaff.run(e.staffName);
                 const staffRow = getStaff.get(e.staffName);
-                insertEntry.run(staffRow.id, e.targetDate, e.shiftTitle, e.shiftTime, rosterType, ts, un);
+                const targetRosterType = e.shiftTitle.toUpperCase() === 'QA L' ? 'Universal' : rosterType;
+                insertEntry.run(staffRow.id, e.targetDate, e.shiftTitle, e.shiftTime, targetRosterType, ts, un);
                 recordsImported++;
             }
         });
@@ -777,7 +796,8 @@ app.post('/api/upload/apply', (req, res) => {
             for (const e of entries) {
                 insertStaff.run(e.staff_name);
                 const staffRow = getStaff.get(e.staff_name);
-                insertEntry.run(staffRow.id, e.date, e.shift_title, e.shift_time || '', rosterType, ts, un);
+                const targetRosterType = e.shift_title.toUpperCase() === 'QA L' ? 'Universal' : rosterType;
+                insertEntry.run(staffRow.id, e.date, e.shift_title, e.shift_time || '', targetRosterType, ts, un);
                 recordsImported++;
             }
         });
@@ -830,9 +850,9 @@ app.get('/api/database/export', (req, res) => {
     try {
         fs.copyFileSync('database.db', tempFile);
         const tempDb = new Database(tempFile);
-        tempDb.prepare('DELETE FROM roster_entries WHERE roster_type != ?').run(rosterType);
-        tempDb.prepare('DELETE FROM daily_tasks WHERE roster_type != ?').run(rosterType);
-        tempDb.prepare('DELETE FROM empty_shift_metadata WHERE roster_type != ?').run(rosterType);
+        tempDb.prepare('DELETE FROM roster_entries WHERE roster_type != ? AND roster_type != \'Universal\'').run(rosterType);
+        tempDb.prepare('DELETE FROM daily_tasks WHERE roster_type != ? AND roster_type != \'Universal\'').run(rosterType);
+        tempDb.prepare('DELETE FROM empty_shift_metadata WHERE roster_type != ? AND roster_type != \'Universal\'').run(rosterType);
         try { tempDb.prepare('DELETE FROM published_weeks WHERE roster_type != ?').run(rosterType); } catch(e) {}
         tempDb.prepare('DELETE FROM shift_tasks WHERE entry_id NOT IN (SELECT id FROM roster_entries)').run();
         tempDb.exec('VACUUM;');
@@ -861,7 +881,7 @@ app.get('/api/database/export/tasks', (req, res) => {
         
         const { startDate, endDate, rosterType = 'QA' } = req.query;
         
-        let dateFilter = 'WHERE roster_type = ?';
+        let dateFilter = 'WHERE roster_type IN (?, \'Universal\')';
         let params = [rosterType];
         if (startDate && endDate) {
             dateFilter += ' AND date BETWEEN ? AND ?';
@@ -956,13 +976,13 @@ app.post('/api/database/import', upload.single('database'), (req, res) => {
         } catch(e) {}
         
         db.transaction(() => {
-            db.prepare('DELETE FROM shift_tasks WHERE entry_id IN (SELECT id FROM roster_entries WHERE roster_type = ?)').run(rosterType);
-            db.prepare('DELETE FROM roster_entries WHERE roster_type = ?').run(rosterType);
-            db.prepare('DELETE FROM daily_tasks WHERE roster_type = ?').run(rosterType);
-            db.prepare('DELETE FROM empty_shift_metadata WHERE roster_type = ?').run(rosterType);
+            db.prepare('DELETE FROM shift_tasks WHERE entry_id IN (SELECT id FROM roster_entries WHERE roster_type IN (?, \'Universal\'))').run(rosterType);
+            db.prepare('DELETE FROM roster_entries WHERE roster_type IN (?, \'Universal\')').run(rosterType);
+            db.prepare('DELETE FROM daily_tasks WHERE roster_type IN (?, \'Universal\')').run(rosterType);
+            db.prepare('DELETE FROM empty_shift_metadata WHERE roster_type IN (?, \'Universal\')').run(rosterType);
             try { db.prepare('DELETE FROM published_weeks WHERE roster_type = ?').run(rosterType); } catch(e) {}
 
-            const importEntries = uploadedDb.prepare('SELECT * FROM roster_entries WHERE roster_type = ?').all(rosterType);
+            const importEntries = uploadedDb.prepare('SELECT * FROM roster_entries WHERE roster_type IN (?, \'Universal\')').all(rosterType);
             const insertEntry = db.prepare('INSERT INTO roster_entries (staff_id, date, shift_title, shift_time, status, note, roster_type, display_order, last_updated_at, last_updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             const insertStaff = db.prepare('INSERT OR IGNORE INTO staff (name, role_category, default_task) VALUES (?, ?, ?)');
             const updateStaffDefault = db.prepare('UPDATE staff SET default_task = ? WHERE name = ? AND default_task IS NULL');
@@ -981,7 +1001,7 @@ app.post('/api/database/import', upload.single('database'), (req, res) => {
             }
 
             if (Object.keys(entryIdMap).length > 0) {
-                const shiftTasks = uploadedDb.prepare('SELECT st.* FROM shift_tasks st JOIN roster_entries re ON st.entry_id = re.id WHERE re.roster_type = ?').all(rosterType);
+                const shiftTasks = uploadedDb.prepare('SELECT st.* FROM shift_tasks st JOIN roster_entries re ON st.entry_id = re.id WHERE re.roster_type IN (?, \'Universal\')').all(rosterType);
                 const insertShiftTask = db.prepare('INSERT INTO shift_tasks (entry_id, task_name, duration, color, group_id) VALUES (?, ?, ?, ?, ?)');
                 for (const st of shiftTasks) {
                     if (entryIdMap[st.entry_id]) {
@@ -990,13 +1010,13 @@ app.post('/api/database/import', upload.single('database'), (req, res) => {
                 }
             }
 
-            const dailyTasks = uploadedDb.prepare('SELECT * FROM daily_tasks WHERE roster_type = ? ORDER BY date ASC, display_order ASC, id ASC').all(rosterType);
+            const dailyTasks = uploadedDb.prepare('SELECT * FROM daily_tasks WHERE roster_type IN (?, \'Universal\') ORDER BY date ASC, display_order ASC, id ASC').all(rosterType);
             const insertDailyTask = db.prepare('INSERT INTO daily_tasks (date, task_name, duration, color, shift_title, group_id, roster_type, display_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
             for (const dt of dailyTasks) {
                 insertDailyTask.run(dt.date, dt.task_name, dt.duration, dt.color, dt.shift_title, dt.group_id, dt.roster_type, dt.display_order !== null ? dt.display_order : 0);
             }
 
-            const metadata = uploadedDb.prepare('SELECT * FROM empty_shift_metadata WHERE roster_type = ?').all(rosterType);
+            const metadata = uploadedDb.prepare('SELECT * FROM empty_shift_metadata WHERE roster_type IN (?, \'Universal\')').all(rosterType);
             const insertMetadata = db.prepare('INSERT INTO empty_shift_metadata (date, shift_title, comment, is_ignored, manual_add, roster_type) VALUES (?, ?, ?, ?, ?, ?)');
             for (const md of metadata) {
                 insertMetadata.run(md.date, md.shift_title, md.comment, md.is_ignored, md.manual_add, md.roster_type);
@@ -1108,10 +1128,10 @@ app.get('/api/roster', (req, res) => {
 
     // Added r.id as 'entry_id' so the front-end can target rows for on-the-fly modifications
     const data = db.prepare(`
-        SELECT r.id as entry_id, r.date, r.shift_title, r.shift_time, r.status, r.note, r.display_order, r.last_updated_at, r.last_updated_by, s.name as staff_name, s.role_category
+        SELECT r.id as entry_id, r.date, r.shift_title, r.shift_time, r.status, r.note, r.display_order, r.last_updated_at, r.last_updated_by, s.name as staff_name, s.role_category, r.roster_type
         FROM roster_entries r
         JOIN staff s ON r.staff_id = s.id
-        WHERE r.date BETWEEN ? AND ? AND r.roster_type = ?
+        WHERE r.date BETWEEN ? AND ? AND r.roster_type IN (?, 'Universal')
         ORDER BY r.date ASC, r.display_order ASC, s.name ASC
     `).all(startDate, endDate, rosterType);
     
@@ -1120,7 +1140,7 @@ app.get('/api/roster', (req, res) => {
         const placeholders = entryIds.map(() => '?').join(',');
         const tasks = db.prepare(`SELECT * FROM shift_tasks WHERE entry_id IN (${placeholders})`).all(...entryIds);
         
-        const taskRanks = db.prepare('SELECT task_name, date FROM daily_tasks WHERE shift_title IS NULL AND date BETWEEN ? AND ? AND roster_type = ? ORDER BY date ASC, display_order ASC, id ASC').all(startDate, endDate, rosterType);
+        const taskRanks = db.prepare('SELECT task_name, date FROM daily_tasks WHERE shift_title IS NULL AND date BETWEEN ? AND ? AND roster_type IN (?, \'Universal\') ORDER BY date ASC, display_order ASC, id ASC').all(startDate, endDate, rosterType);
         const rankMap = {};
         taskRanks.forEach(r => {
             if (!rankMap[r.date]) rankMap[r.date] = {};
@@ -1154,11 +1174,12 @@ app.get('/api/roster', (req, res) => {
 
 // --- API: UPDATE SPECIFIC SHIFT ROLE ON THE FLY (NEW) ---
 app.post('/api/roster/shift', (req, res) => {
-    const { entry_id, new_shift_title } = req.body;
+    const { entry_id, new_shift_title, rosterType = 'QA' } = req.body;
     
     try {
-        const update = db.prepare('UPDATE roster_entries SET shift_title = ?, last_updated_at = ?, last_updated_by = ? WHERE id = ?');
-        const result = update.run(new_shift_title, new Date().toISOString(), os.userInfo().username || 'Unknown', entry_id);
+        const targetRosterType = new_shift_title.toUpperCase() === 'QA L' ? 'Universal' : rosterType;
+        const update = db.prepare('UPDATE roster_entries SET shift_title = ?, roster_type = ?, last_updated_at = ?, last_updated_by = ? WHERE id = ?');
+        const result = update.run(new_shift_title, targetRosterType, new Date().toISOString(), getUsername(req), entry_id);
         
         if (result.changes > 0) {
             res.json({ success: true, message: 'Shift role updated successfully.' });
@@ -1209,15 +1230,16 @@ app.post('/api/roster/shift/note', (req, res) => {
 
 // --- API: DUPLICATE SHIFT VIA COPY/PASTE (NEW) ---
 app.post('/api/roster/shift/duplicate', (req, res) => {
-    const { source_entry_id, new_date, new_shift_title } = req.body;
+    const { source_entry_id, new_date, new_shift_title, rosterType = 'QA' } = req.body;
     try {
         const source = db.prepare('SELECT * FROM roster_entries WHERE id = ?').get(source_entry_id);
         if (!source) return res.status(404).json({ error: 'Source shift not found.' });
         
+        const targetRosterType = new_shift_title.toUpperCase() === 'QA L' ? 'Universal' : rosterType;
         db.prepare(`
             INSERT INTO roster_entries (staff_id, date, shift_title, shift_time, status, roster_type, last_updated_at, last_updated_by)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(source.staff_id, new_date, new_shift_title, source.shift_time, source.status, source.roster_type, new Date().toISOString(), os.userInfo().username || 'Unknown');
+        `).run(source.staff_id, new_date, new_shift_title, source.shift_time, source.status, targetRosterType, new Date().toISOString(), getUsername(req));
         res.json({ success: true });
     } catch (err) {
         console.error(err);
@@ -1248,12 +1270,13 @@ app.post('/api/roster/shift/swap', (req, res) => {
 
 // --- API: MOVE SHIFT VIA DRAG AND DROP ---
 app.post('/api/roster/shift/move', (req, res) => {
-    const { entry_id, new_date, new_shift_title, source_task, target_task } = req.body;
+    const { entry_id, new_date, new_shift_title, source_task, target_task, rosterType = 'QA' } = req.body;
     try {
         let changesMade = false;
         db.transaction(() => {
-            const update = db.prepare('UPDATE roster_entries SET date = ?, shift_title = ?, last_updated_at = ?, last_updated_by = ? WHERE id = ?');
-            const result = update.run(new_date, new_shift_title, new Date().toISOString(), os.userInfo().username || 'Unknown', entry_id);
+            const targetRosterType = new_shift_title.toUpperCase() === 'QA L' ? 'Universal' : rosterType;
+            const update = db.prepare('UPDATE roster_entries SET date = ?, shift_title = ?, roster_type = ?, last_updated_at = ?, last_updated_by = ? WHERE id = ?');
+            const result = update.run(new_date, new_shift_title, targetRosterType, new Date().toISOString(), getUsername(req), entry_id);
             
             if (result.changes > 0) {
                 changesMade = true;
@@ -1346,7 +1369,7 @@ app.post('/api/roster/auto-group-tasks', (req, res) => {
 // --- API: DAILY TASKS ---
 app.get('/api/tasks', (req, res) => {
     const { startDate, endDate, rosterType = 'QA' } = req.query;
-    const tasks = db.prepare(`SELECT * FROM daily_tasks WHERE roster_type = ? AND date BETWEEN ? AND ? ORDER BY date ASC, display_order ASC, id ASC`).all(rosterType, startDate, endDate);
+    const tasks = db.prepare(`SELECT * FROM daily_tasks WHERE roster_type IN (?, 'Universal') AND date BETWEEN ? AND ? ORDER BY date ASC, display_order ASC, id ASC`).all(rosterType, startDate, endDate);
     res.json(tasks);
 });
 
@@ -1365,13 +1388,13 @@ app.post('/api/tasks/link', (req, res) => {
     const { task_name, rosterType = 'QA' } = req.body;
     try {
         db.transaction(() => {
-            const existingDaily = db.prepare("SELECT group_id FROM daily_tasks WHERE task_name = ? AND roster_type = ? AND group_id IS NOT NULL LIMIT 1").get(task_name, rosterType);
-            const existingShift = db.prepare("SELECT st.group_id FROM shift_tasks st JOIN roster_entries re ON st.entry_id = re.id WHERE st.task_name = ? AND re.roster_type = ? AND st.group_id IS NOT NULL LIMIT 1").get(task_name, rosterType);
+            const existingDaily = db.prepare("SELECT group_id FROM daily_tasks WHERE task_name = ? AND roster_type IN (?, 'Universal') AND group_id IS NOT NULL LIMIT 1").get(task_name, rosterType);
+            const existingShift = db.prepare("SELECT st.group_id FROM shift_tasks st JOIN roster_entries re ON st.entry_id = re.id WHERE st.task_name = ? AND re.roster_type IN (?, 'Universal') AND st.group_id IS NOT NULL LIMIT 1").get(task_name, rosterType);
             
             const unifiedGroupId = (existingDaily && existingDaily.group_id) || (existingShift && existingShift.group_id) || Date.now().toString() + Math.random().toString(36).substring(2, 7);
             
-            db.prepare("UPDATE daily_tasks SET group_id = ? WHERE task_name = ? AND roster_type = ?").run(unifiedGroupId, task_name, rosterType);
-            db.prepare("UPDATE shift_tasks SET group_id = ? WHERE task_name = ? AND entry_id IN (SELECT id FROM roster_entries WHERE roster_type = ?)").run(unifiedGroupId, task_name, rosterType);
+            db.prepare("UPDATE daily_tasks SET group_id = ? WHERE task_name = ? AND roster_type IN (?, 'Universal')").run(unifiedGroupId, task_name, rosterType);
+            db.prepare("UPDATE shift_tasks SET group_id = ? WHERE task_name = ? AND entry_id IN (SELECT id FROM roster_entries WHERE roster_type IN (?, 'Universal'))").run(unifiedGroupId, task_name, rosterType);
         })();
         res.json({ success: true, message: 'Tasks with the same name have been successfully linked.' });
     } catch (err) {
@@ -1385,16 +1408,16 @@ app.post('/api/tasks/link-all', (req, res) => {
     try {
         const uniqueTaskNames = db.prepare(`
             SELECT DISTINCT task_name FROM (
-                SELECT task_name FROM daily_tasks WHERE task_name IS NOT NULL AND roster_type = ?
+                SELECT task_name FROM daily_tasks WHERE task_name IS NOT NULL AND roster_type IN (?, 'Universal')
                 UNION
-                SELECT st.task_name FROM shift_tasks st JOIN roster_entries re ON st.entry_id = re.id WHERE st.task_name IS NOT NULL AND re.roster_type = ?
+                SELECT st.task_name FROM shift_tasks st JOIN roster_entries re ON st.entry_id = re.id WHERE st.task_name IS NOT NULL AND re.roster_type IN (?, 'Universal')
             )
         `).all(rosterType, rosterType);
         db.transaction(() => {
-            const updateDaily = db.prepare("UPDATE daily_tasks SET group_id = ? WHERE task_name = ? AND roster_type = ?");
-            const updateShift = db.prepare("UPDATE shift_tasks SET group_id = ? WHERE task_name = ? AND entry_id IN (SELECT id FROM roster_entries WHERE roster_type = ?)");
+            const updateDaily = db.prepare("UPDATE daily_tasks SET group_id = ? WHERE task_name = ? AND roster_type IN (?, 'Universal')");
+            const updateShift = db.prepare("UPDATE shift_tasks SET group_id = ? WHERE task_name = ? AND entry_id IN (SELECT id FROM roster_entries WHERE roster_type IN (?, 'Universal'))");
             for (const t of uniqueTaskNames) {
-                const existing = db.prepare("SELECT group_id FROM daily_tasks WHERE task_name = ? AND roster_type = ? AND group_id IS NOT NULL LIMIT 1").get(t.task_name, rosterType);
+                const existing = db.prepare("SELECT group_id FROM daily_tasks WHERE task_name = ? AND roster_type IN (?, 'Universal') AND group_id IS NOT NULL LIMIT 1").get(t.task_name, rosterType);
                 const unifiedGroupId = existing ? existing.group_id : Date.now().toString() + Math.random().toString(36).substring(2, 7);
                 updateDaily.run(unifiedGroupId, t.task_name, rosterType);
                 updateShift.run(unifiedGroupId, t.task_name, rosterType);
@@ -1653,7 +1676,19 @@ app.delete('/api/data/clear', (req, res) => {
                     )
                 `).run(...params);
                 
+                if (rosterType === 'QA') {
+                    db.prepare(`
+                        DELETE FROM shift_tasks 
+                        WHERE entry_id IN (
+                            SELECT id FROM roster_entries WHERE roster_type = 'Universal'${dateCondition}
+                        )
+                    `).run(...params.slice(1));
+                }
+                
                 db.prepare(`DELETE FROM daily_tasks WHERE roster_type = ?${dateCondition}`).run(...params);
+                if (rosterType === 'QA') {
+                    db.prepare(`DELETE FROM daily_tasks WHERE roster_type = 'Universal'${dateCondition}`).run(...params.slice(1));
+                }
             }
 
             if (type === 'shifts') {
@@ -1661,13 +1696,14 @@ app.delete('/api/data/clear', (req, res) => {
                     SELECT st.task_name, st.duration, st.color, st.group_id, re.date, re.shift_title
                     FROM shift_tasks st
                     JOIN roster_entries re ON st.entry_id = re.id
-                    WHERE re.roster_type = ?${dateCondition}
+                    WHERE re.roster_type IN (?, 'Universal')${dateCondition}
                 `).all(...params);
 
                 if (tasksToRecover.length > 0) {
                     const insertRecoveredTask = db.prepare(`INSERT INTO daily_tasks (date, task_name, duration, color, shift_title, group_id, roster_type) VALUES (?, ?, ?, ?, ?, ?, ?)`);
                     tasksToRecover.forEach(t => {
-                        insertRecoveredTask.run(t.date, t.task_name, t.duration, t.color, t.shift_title, t.group_id, rosterType);
+                        const insertType = t.shift_title === 'QA L' ? 'Universal' : rosterType;
+                        insertRecoveredTask.run(t.date, t.task_name, t.duration, t.color, t.shift_title, t.group_id, insertType);
                     });
                 }
                 
@@ -1677,11 +1713,23 @@ app.delete('/api/data/clear', (req, res) => {
                         SELECT id FROM roster_entries WHERE roster_type = ?${dateCondition}
                     )
                 `).run(...params);
+                if (rosterType === 'QA') {
+                    db.prepare(`
+                        DELETE FROM shift_tasks 
+                        WHERE entry_id IN (
+                            SELECT id FROM roster_entries WHERE roster_type = 'Universal'${dateCondition}
+                        )
+                    `).run(...params.slice(1));
+                }
             }
 
             if (type === 'shifts' || type === 'both') {
                 db.prepare(`DELETE FROM roster_entries WHERE roster_type = ?${dateCondition}`).run(...params);
                 db.prepare(`DELETE FROM empty_shift_metadata WHERE roster_type = ?${dateCondition}`).run(...params);
+                if (rosterType === 'QA') {
+                    db.prepare(`DELETE FROM roster_entries WHERE roster_type = 'Universal'${dateCondition}`).run(...params.slice(1));
+                    db.prepare(`DELETE FROM empty_shift_metadata WHERE roster_type = 'Universal'${dateCondition}`).run(...params.slice(1));
+                }
             const weekCondition = dateCondition.replace(/date/g, 'week_commencing');
             db.prepare(`DELETE FROM published_weeks WHERE roster_type = ?${weekCondition}`).run(...params);
             }
@@ -1831,17 +1879,19 @@ app.delete('/api/staff/:id', (req, res) => {
 
 app.get('/api/metadata', (req, res) => {
     const { startDate, endDate } = req.query;
-    const data = db.prepare(`SELECT * FROM empty_shift_metadata WHERE date BETWEEN ? AND ?`).all(startDate, endDate);
+    const { rosterType = 'QA' } = req.query;
+    const data = db.prepare(`SELECT * FROM empty_shift_metadata WHERE date BETWEEN ? AND ? AND roster_type IN (?, 'Universal')`).all(startDate, endDate, rosterType);
     res.json(data);
 });
 
 app.post('/api/metadata/comment', (req, res) => {
     const { date, shift_title, comment, rosterType = 'QA' } = req.body;
     try {
+        const targetRosterType = shift_title.toUpperCase() === 'QA L' ? 'Universal' : rosterType;
         db.prepare(`
             INSERT INTO empty_shift_metadata (date, shift_title, comment, roster_type) VALUES (?, ?, ?, ?)
             ON CONFLICT(date, shift_title, roster_type) DO UPDATE SET comment = excluded.comment
-        `).run(date, shift_title, comment, rosterType);
+        `).run(date, shift_title, comment, targetRosterType);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'Failed to save comment.' });
@@ -1851,10 +1901,11 @@ app.post('/api/metadata/comment', (req, res) => {
 app.post('/api/metadata/ignore', (req, res) => {
     const { date, shift_title, is_ignored, rosterType = 'QA' } = req.body;
     try {
+        const targetRosterType = shift_title.toUpperCase() === 'QA L' ? 'Universal' : rosterType;
         db.prepare(`
             INSERT INTO empty_shift_metadata (date, shift_title, is_ignored, roster_type) VALUES (?, ?, ?, ?)
             ON CONFLICT(date, shift_title, roster_type) DO UPDATE SET is_ignored = excluded.is_ignored
-        `).run(date, shift_title, is_ignored, rosterType);
+        `).run(date, shift_title, is_ignored, targetRosterType);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'Failed to update ignore status.' });
@@ -1866,10 +1917,11 @@ app.post('/api/roster/shift/assign', (req, res) => {
     try {
         const staff = db.prepare('SELECT id FROM staff WHERE name = ?').get(staff_name);
         if (!staff) return res.status(404).json({ error: 'Staff not found.' });
+        const targetRosterType = shift_title.toUpperCase() === 'QA L' ? 'Universal' : rosterType;
         db.prepare(`
             INSERT INTO roster_entries (staff_id, date, shift_title, shift_time, roster_type, last_updated_at, last_updated_by)
             VALUES (?, ?, ?, '', ?, ?, ?)
-        `).run(staff.id, date, shift_title, rosterType, new Date().toISOString(), os.userInfo().username || 'Unknown');
+        `).run(staff.id, date, shift_title, targetRosterType, new Date().toISOString(), getUsername(req));
         applyDefaultTasks();
         res.json({ success: true });
     } catch (err) {
@@ -1885,10 +1937,11 @@ app.post('/api/metadata/manual', (req, res) => {
     const { date, shift_title, amount, rosterType = 'QA' } = req.body;
     try {
         const amt = parseInt(amount) || 0;
+        const targetRosterType = shift_title.toUpperCase() === 'QA L' ? 'Universal' : rosterType;
         db.prepare(`
             INSERT INTO empty_shift_metadata (date, shift_title, manual_add, roster_type) VALUES (?, ?, ?, ?)
             ON CONFLICT(date, shift_title, roster_type) DO UPDATE SET manual_add = empty_shift_metadata.manual_add + ?
-        `).run(date, shift_title, amt, rosterType, amt);
+        `).run(date, shift_title, amt, targetRosterType, amt);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'Failed to update manual missing assignment.' });
@@ -1898,12 +1951,13 @@ app.post('/api/metadata/manual', (req, res) => {
 app.post('/api/tasks/assign_missing', (req, res) => {
     const { task_id, task_type, date, shift_title, task_name, duration, color, group_id, rosterType = 'QA' } = req.body;
     try {
+        const targetRosterType = shift_title.toUpperCase() === 'QA L' ? 'Universal' : rosterType;
         if (task_type === 'daily') {
-            db.prepare('INSERT INTO daily_tasks (date, task_name, duration, color, shift_title, group_id, roster_type) VALUES (?, ?, ?, ?, ?, ?, ?)').run(date, task_name, duration, color, shift_title, group_id, rosterType);
+            db.prepare('INSERT INTO daily_tasks (date, task_name, duration, color, shift_title, group_id, roster_type) VALUES (?, ?, ?, ?, ?, ?, ?)').run(date, task_name, duration, color, shift_title, group_id, targetRosterType);
         } else if (task_type === 'assigned') {
             const task = db.prepare('SELECT * FROM shift_tasks WHERE id = ?').get(task_id);
             if (task) {
-                db.prepare('INSERT INTO daily_tasks (date, task_name, duration, color, shift_title, group_id, roster_type) VALUES (?, ?, ?, ?, ?, ?, ?)').run(date, task.task_name, task.duration, task.color, shift_title, task.group_id, rosterType);
+                db.prepare('INSERT INTO daily_tasks (date, task_name, duration, color, shift_title, group_id, roster_type) VALUES (?, ?, ?, ?, ?, ?, ?)').run(date, task.task_name, task.duration, task.color, shift_title, task.group_id, targetRosterType);
                 db.prepare('DELETE FROM shift_tasks WHERE id = ?').run(task_id);
             }
         }
@@ -1917,11 +1971,11 @@ app.post('/api/tasks/assign_missing', (req, res) => {
 app.get('/api/statistics', (req, res) => {
     const { rosterType = 'QA', timeRange = 'all' } = req.query;
     try {
-        const statuses = db.prepare(`SELECT status, COUNT(*) as count FROM roster_entries WHERE status IN ('Sick', 'Unavailable', 'WFH') AND roster_type = ? GROUP BY status`).all(rosterType);
-        const taskAllocation = db.prepare(`SELECT s.name, COUNT(st.id) as count FROM shift_tasks st JOIN roster_entries r ON st.entry_id = r.id JOIN staff s ON r.staff_id = s.id WHERE r.roster_type = ? GROUP BY s.name ORDER BY count DESC LIMIT 10`).all(rosterType);
-        const manualMissing = db.prepare(`SELECT SUM(manual_add) as count FROM empty_shift_metadata WHERE is_ignored = 0 AND roster_type = ?`).get(rosterType).count || 0;
-        const totalIgnored = db.prepare(`SELECT COUNT(*) as count FROM empty_shift_metadata WHERE is_ignored = 1 AND roster_type = ?`).get(rosterType).count || 0;
-        const roleCounts = db.prepare(`SELECT shift_title, COUNT(*) as count FROM roster_entries WHERE roster_type = ? GROUP BY shift_title ORDER BY count DESC LIMIT 10`).all(rosterType);
+        const statuses = db.prepare(`SELECT status, COUNT(*) as count FROM roster_entries WHERE status IN ('Sick', 'Unavailable', 'WFH') AND roster_type IN (?, 'Universal') GROUP BY status`).all(rosterType);
+        const taskAllocation = db.prepare(`SELECT s.name, COUNT(st.id) as count FROM shift_tasks st JOIN roster_entries r ON st.entry_id = r.id JOIN staff s ON r.staff_id = s.id WHERE r.roster_type IN (?, 'Universal') GROUP BY s.name ORDER BY count DESC LIMIT 10`).all(rosterType);
+        const manualMissing = db.prepare(`SELECT SUM(manual_add) as count FROM empty_shift_metadata WHERE is_ignored = 0 AND roster_type IN (?, 'Universal')`).get(rosterType).count || 0;
+        const totalIgnored = db.prepare(`SELECT COUNT(*) as count FROM empty_shift_metadata WHERE is_ignored = 1 AND roster_type IN (?, 'Universal')`).get(rosterType).count || 0;
+        const roleCounts = db.prepare(`SELECT shift_title, COUNT(*) as count FROM roster_entries WHERE roster_type IN (?, 'Universal') GROUP BY shift_title ORDER BY count DESC LIMIT 10`).all(rosterType);
 
         function calculateHours(shiftTime) {
             if (!shiftTime) return 7.5;
@@ -1946,7 +2000,7 @@ app.get('/api/statistics', (req, res) => {
         }
 
         const taskHoursMap = {};
-        const allShiftTasks = db.prepare(`SELECT st.task_name, re.shift_time FROM shift_tasks st JOIN roster_entries re ON st.entry_id = re.id WHERE re.roster_type = ?`).all(rosterType);
+        const allShiftTasks = db.prepare(`SELECT st.task_name, re.shift_time FROM shift_tasks st JOIN roster_entries re ON st.entry_id = re.id WHERE re.roster_type IN (?, 'Universal')`).all(rosterType);
         allShiftTasks.forEach(st => {
             const hrs = calculateHours(st.shift_time);
             if (!taskHoursMap[st.task_name]) taskHoursMap[st.task_name] = 0;
@@ -1955,7 +2009,7 @@ app.get('/api/statistics', (req, res) => {
         const taskHours = Object.keys(taskHoursMap).map(k => ({ task: k, hours: taskHoursMap[k] })).sort((a, b) => b.hours - a.hours);
 
         const weeklyStatsMap = {};
-        const allEntries = db.prepare(`SELECT date, shift_time, status FROM roster_entries WHERE roster_type = ?`).all(rosterType);
+        const allEntries = db.prepare(`SELECT date, shift_time, status FROM roster_entries WHERE roster_type IN (?, 'Universal')`).all(rosterType);
         allEntries.forEach(re => {
             const d = new Date(re.date + 'T12:00:00Z');
             const day = d.getUTCDay();
@@ -2000,7 +2054,7 @@ app.get('/api/statistics', (req, res) => {
             SELECT re.id, s.name as userName, re.shift_time, re.status, re.date
             FROM roster_entries re
             JOIN staff s ON re.staff_id = s.id
-            WHERE re.roster_type = ? AND re.status NOT IN ('Sick', 'Unavailable') ${userTaskDateFilter}
+            WHERE re.roster_type IN (?, 'Universal') AND re.status NOT IN ('Sick', 'Unavailable') ${userTaskDateFilter}
         `).all(rosterType);
 
         const shiftTasksData = db.prepare(`SELECT entry_id, task_name FROM shift_tasks`).all();
