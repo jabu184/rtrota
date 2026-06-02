@@ -1,3 +1,6 @@
+// --- CONFIGURATION ---
+const ADMIN_PASSWORD = '2infinity'; // Change this value to update the admin password
+
 let allAvailableStaff = [];
 let isLightTheme = false;
 let isAdmin = false;
@@ -256,7 +259,7 @@ async function toggleAdmin() {
             message: 'Enter Admin Password:',
             inputType: 'password'
         });
-        if (pwd === 'admin') {
+        if (pwd === ADMIN_PASSWORD) {
             isAdmin = true;
             document.body.classList.remove('read-only');
             document.getElementById('adminBtn').innerText = 'Logout Admin';
@@ -308,7 +311,7 @@ async function promptUpdateIndexHtml() {
             message: `DANGER: Enter Admin Password to confirm updating index.html with "${file.name}":`,
             inputType: 'password'
         });
-        if (pwd !== 'admin') {
+        if (pwd !== ADMIN_PASSWORD) {
             if (pwd !== null) await customAlert('Incorrect password.');
             return;
         }
