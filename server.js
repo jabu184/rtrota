@@ -2121,7 +2121,7 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'An unexpected server error occurred.' });
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3002;
 server.listen(PORT, () => {
     console.log(`QA Roster Server running on port ${PORT}`);
 });
