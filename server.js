@@ -87,7 +87,8 @@ db.exec(`
     group_id TEXT,
     roster_type TEXT DEFAULT 'QA',
     abbreviation TEXT DEFAULT NULL,
-    category TEXT DEFAULT NULL
+    category TEXT DEFAULT NULL,
+    notes TEXT DEFAULT NULL
   );
 
   CREATE TABLE IF NOT EXISTS shift_tasks (
@@ -127,6 +128,7 @@ db.exec(`
     abbreviation TEXT DEFAULT NULL,
     category TEXT DEFAULT NULL,
     linked_tasks TEXT DEFAULT NULL,
+    notes TEXT DEFAULT NULL,
     UNIQUE(task_name, roster_type)
   );
 `);
@@ -137,6 +139,9 @@ try { db.exec("ALTER TABLE daily_tasks ADD COLUMN abbreviation TEXT DEFAULT NULL
 try { db.exec("ALTER TABLE task_templates ADD COLUMN category TEXT DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE daily_tasks ADD COLUMN category TEXT DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE task_templates ADD COLUMN linked_tasks TEXT DEFAULT NULL"); } catch(e) {}
+try { db.exec("ALTER TABLE daily_tasks ADD COLUMN notes TEXT DEFAULT NULL"); } catch(e) {}
+try { db.exec("ALTER TABLE task_templates ADD COLUMN notes TEXT DEFAULT NULL"); } catch(e) {}
+try { db.exec("UPDATE task_templates SET roster_type = 'QA' WHERE roster_type IS NULL OR roster_type = ''"); } catch(e) {}
 
 // --- AUTOMATIC SCHEMA MIGRATION ---
 try {
@@ -216,6 +221,16 @@ try {
         console.log("--> Migration to Universal QA L successful.");
     }
 } catch (err) { console.error("Universal QA L migration error:", err); }
+
+// Migrate old category name 'Scheduled Service + QA' to 'Scheduled Service'
+try {
+    db.transaction(() => {
+        db.prepare("UPDATE task_templates SET category = 'Scheduled Service' WHERE category = 'Scheduled Service + QA'").run();
+        db.prepare("UPDATE daily_tasks SET category = 'Scheduled Service' WHERE category = 'Scheduled Service + QA'").run();
+    })();
+} catch (err) {
+    console.error("Category update migration error:", err);
+}
 
 // --- FIX DANGLING FOREIGN KEYS ---
 try {
@@ -1061,13 +1076,16 @@ app.post('/api/database/import', upload.single('database'), (req, res) => {
                 const hasTemplatesTable = uploadedDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='task_templates'").get();
                 if (hasTemplatesTable) {
                     db.prepare('DELETE FROM task_templates').run();
-                    const importTemplates = uploadedDb.prepare('SELECT * FROM task_templates').all();
                     try {
                         uploadedDb.exec("ALTER TABLE task_templates ADD COLUMN linked_tasks TEXT DEFAULT NULL");
                     } catch(e) {}
-                    const insertTemplate = db.prepare('INSERT INTO task_templates (task_name, duration, color, roster_type, target_interval, abbreviation, category, linked_tasks) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                    try {
+                        uploadedDb.exec("ALTER TABLE task_templates ADD COLUMN notes TEXT DEFAULT NULL");
+                    } catch(e) {}
+                    const importTemplates = uploadedDb.prepare('SELECT * FROM task_templates').all();
+                    const insertTemplate = db.prepare('INSERT INTO task_templates (task_name, duration, color, roster_type, target_interval, abbreviation, category, linked_tasks, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
                     for (const t of importTemplates) {
-                        insertTemplate.run(t.task_name, t.duration, t.color, t.roster_type, t.target_interval, t.abbreviation, t.category, t.linked_tasks || null);
+                        insertTemplate.run(t.task_name, t.duration, t.color, t.roster_type, t.target_interval, t.abbreviation, t.category, t.linked_tasks || null, t.notes || null);
                     }
                 }
             } catch (err) {
@@ -1108,10 +1126,32 @@ app.post('/api/database/import', upload.single('database'), (req, res) => {
                 }
             }
 
+            try {
+                uploadedDb.exec("ALTER TABLE daily_tasks ADD COLUMN abbreviation TEXT DEFAULT NULL");
+            } catch(e) {}
+            try {
+                uploadedDb.exec("ALTER TABLE daily_tasks ADD COLUMN category TEXT DEFAULT NULL");
+            } catch(e) {}
+            try {
+                uploadedDb.exec("ALTER TABLE daily_tasks ADD COLUMN notes TEXT DEFAULT NULL");
+            } catch(e) {}
+
             const dailyTasks = uploadedDb.prepare('SELECT * FROM daily_tasks WHERE roster_type IN (?, \'Universal\') ORDER BY date ASC, display_order ASC, id ASC').all(rosterType);
-            const insertDailyTask = db.prepare('INSERT INTO daily_tasks (date, task_name, duration, color, shift_title, group_id, roster_type, display_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+            const insertDailyTask = db.prepare('INSERT INTO daily_tasks (date, task_name, duration, color, shift_title, group_id, roster_type, display_order, abbreviation, category, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             for (const dt of dailyTasks) {
-                insertDailyTask.run(dt.date, dt.task_name, dt.duration, dt.color, dt.shift_title, dt.group_id, dt.roster_type, dt.display_order !== null ? dt.display_order : 0);
+                insertDailyTask.run(
+                    dt.date, 
+                    dt.task_name, 
+                    dt.duration, 
+                    dt.color, 
+                    dt.shift_title, 
+                    dt.group_id, 
+                    dt.roster_type, 
+                    dt.display_order !== null ? dt.display_order : 0,
+                    dt.abbreviation || null,
+                    dt.category || null,
+                    dt.notes || null
+                );
             }
 
             const metadata = uploadedDb.prepare('SELECT * FROM empty_shift_metadata WHERE roster_type IN (?, \'Universal\')').all(rosterType);
@@ -1487,12 +1527,12 @@ app.get('/api/tasks', (req, res) => {
 });
 
 app.post('/api/tasks', (req, res) => {
-    const { date, task_name, duration = 'All Day', color = 'color-1', group_id = null, rosterType = 'QA', abbreviation = null, category = null } = req.body;
+    const { date, task_name, duration = 'All Day', color = 'color-1', group_id = null, rosterType = 'QA', abbreviation = null, category = null, notes = null } = req.body;
     try {
         const maxOrderRow = db.prepare("SELECT MAX(display_order) as maxOrder FROM daily_tasks WHERE date = ? AND roster_type IN (?, 'Universal') AND shift_title IS NULL").get(date, rosterType);
         const nextOrder = (maxOrderRow && maxOrderRow.maxOrder !== null) ? maxOrderRow.maxOrder + 1 : 0;
         
-        db.prepare('INSERT INTO daily_tasks (date, task_name, duration, color, group_id, roster_type, display_order, abbreviation, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(date, task_name, duration, color, group_id, rosterType, nextOrder, abbreviation, category);
+        db.prepare('INSERT INTO daily_tasks (date, task_name, duration, color, group_id, roster_type, display_order, abbreviation, category, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(date, task_name, duration, color, group_id, rosterType, nextOrder, abbreviation, category, notes);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'Failed to add task.' });
@@ -1511,22 +1551,22 @@ app.get('/api/templates', (req, res) => {
 });
 
 app.post('/api/templates', (req, res) => {
-    const { task_name, duration = 1, color = 'color-1', rosterType = 'QA', target_interval = null, abbreviation = null, category = null, linked_tasks = null, applyToExisting = false } = req.body;
+    const { task_name, duration = 1, color = 'color-1', rosterType = 'QA', target_interval = null, abbreviation = null, category = null, linked_tasks = null, notes = null, applyToExisting = false } = req.body;
     try {
         db.transaction(() => {
             db.prepare(`
-                INSERT INTO task_templates (task_name, duration, color, roster_type, target_interval, abbreviation, category, linked_tasks) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO task_templates (task_name, duration, color, roster_type, target_interval, abbreviation, category, linked_tasks, notes) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(task_name, roster_type) 
-                DO UPDATE SET duration=excluded.duration, color=excluded.color, target_interval=excluded.target_interval, abbreviation=excluded.abbreviation, category=excluded.category, linked_tasks=excluded.linked_tasks
-            `).run(task_name, duration, color, rosterType, target_interval, abbreviation, category, linked_tasks);
+                DO UPDATE SET duration=excluded.duration, color=excluded.color, target_interval=excluded.target_interval, abbreviation=excluded.abbreviation, category=excluded.category, linked_tasks=excluded.linked_tasks, notes=excluded.notes
+            `).run(task_name, duration, color, rosterType, target_interval, abbreviation, category, linked_tasks, notes);
             
             if (applyToExisting) {
                 db.prepare(`
                     UPDATE daily_tasks 
-                    SET color = ?, abbreviation = ?, category = ? 
+                    SET color = ?, abbreviation = ?, category = ?, notes = ? 
                     WHERE task_name = ? AND roster_type = ?
-                `).run(color, abbreviation, category, task_name, rosterType);
+                `).run(color, abbreviation, category, notes, task_name, rosterType);
             }
         })();
         res.json({ success: true });
@@ -1728,10 +1768,10 @@ app.post('/api/tasks/move-annual', (req, res) => {
                         deleteShiftTask.run(t.task_name, t.date, t.roster_type || 'QA');
 
                         const originalDate = new Date(t.date);
-                        originalDate.setDate(originalDate.getDate() + dateDiff);
-                        const mm = String(originalDate.getMonth() + 1).padStart(2, '0');
-                        const dd = String(originalDate.getDate()).padStart(2, '0');
-                        const newDateStr = `${originalDate.getFullYear()}-${mm}-${dd}`;
+                        originalDate.setUTCDate(originalDate.getUTCDate() + dateDiff);
+                        const mm = String(originalDate.getUTCMonth() + 1).padStart(2, '0');
+                        const dd = String(originalDate.getUTCDate()).padStart(2, '0');
+                        const newDateStr = `${originalDate.getUTCFullYear()}-${mm}-${dd}`;
                         updateDate.run(newDateStr, t.id);
                     });
                 }
@@ -1780,7 +1820,7 @@ app.post('/api/tasks/edit', (req, res) => {
 });
 
 app.post('/api/tasks/edit-event', (req, res) => {
-    const { task_id, task_name, color, category, abbreviation } = req.body;
+    const { task_id, task_name, color, category, abbreviation, notes } = req.body;
     try {
         const task = db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(task_id);
         if (!task) return res.status(404).json({ error: 'Task not found.' });
@@ -1791,7 +1831,7 @@ app.post('/api/tasks/edit-event', (req, res) => {
                 const groupTasks = db.prepare('SELECT * FROM daily_tasks WHERE group_id = ?').all(task.group_id);
                 
                 // Update each daily task and its corresponding shift tasks
-                const updateDaily = db.prepare('UPDATE daily_tasks SET task_name = ?, color = ?, category = ?, abbreviation = ? WHERE id = ?');
+                const updateDaily = db.prepare('UPDATE daily_tasks SET task_name = ?, color = ?, category = ?, abbreviation = ?, notes = ? WHERE id = ?');
                 const updateShift = db.prepare(`
                     UPDATE shift_tasks 
                     SET task_name = ?, color = ? 
@@ -1802,7 +1842,7 @@ app.post('/api/tasks/edit-event', (req, res) => {
 
                 groupTasks.forEach(gt => {
                     updateShift.run(task_name, color, gt.task_name, gt.date, gt.roster_type || 'QA');
-                    updateDaily.run(task_name, color, category, abbreviation, gt.id);
+                    updateDaily.run(task_name, color, category, abbreviation, notes, gt.id);
                 });
             } else {
                 // Update single task
@@ -1814,8 +1854,8 @@ app.post('/api/tasks/edit-event', (req, res) => {
                     )
                 `).run(task_name, color, task.task_name, task.date, task.roster_type || 'QA');
 
-                db.prepare('UPDATE daily_tasks SET task_name = ?, color = ?, category = ?, abbreviation = ? WHERE id = ?')
-                  .run(task_name, color, category, abbreviation, task_id);
+                db.prepare('UPDATE daily_tasks SET task_name = ?, color = ?, category = ?, abbreviation = ?, notes = ? WHERE id = ?')
+                  .run(task_name, color, category, abbreviation, notes, task_id);
             }
         })();
         res.json({ success: true });
