@@ -1,0 +1,2 @@
+Fixes double insert of task into database bug
+New daily tasks automatically default to the bottom of the list

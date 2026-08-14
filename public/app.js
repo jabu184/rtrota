@@ -66,11 +66,11 @@ function getAffectedShifts(clickedChip) {
 
 async function confirmMultiSelection(entryIds, actionName) {
     if (!entryIds || entryIds.length <= 1) return true;
-    
+
     const staffCounts = {};
     const uniqueDates = new Set();
     let totalItems = 0;
-    
+
     entryIds.forEach(id => {
         const isMissing = String(id).startsWith('empty|');
         if (isMissing) {
@@ -89,41 +89,41 @@ async function confirmMultiSelection(entryIds, actionName) {
             }
         }
     });
-    
+
     let message = `You are about to ${actionName} for ${totalItems} selected item(s) across ${uniqueDates.size} day(s).\n\n`;
     message += `Affected Users:\n`;
     for (const [staff, count] of Object.entries(staffCounts)) {
         message += `• ${staff}: ${count} item(s)\n`;
     }
     message += `\n⚠️ Warning: Not all selections may be visible on screen.`;
-    
+
     return await customConfirm(message);
 }
 
 function toBritishDate(isoStr) {
-    if(!isoStr) return '';
+    if (!isoStr) return '';
     const parts = isoStr.split('-');
-    if(parts.length !== 3) return isoStr;
+    if (parts.length !== 3) return isoStr;
     return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
 function fromBritishDate(britStr) {
-    if(!britStr) return '';
+    if (!britStr) return '';
     const parts = britStr.split('/');
-    if(parts.length !== 3) return britStr;
+    if (parts.length !== 3) return britStr;
     return `${parts[2]}-${parts[1]}-${parts[0]}`;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
     const todayStr = new Date().toISOString().split('T')[0];
-    document.getElementById('startDate').value = getMonday(todayStr);    
+    document.getElementById('startDate').value = getMonday(todayStr);
     document.body.classList.add('read-only'); // Default to Read-Only mode
-    
+
     let savedRoster = localStorage.getItem('currentRoster') || 'QA';
     if (localStorage.getItem('hideDailyTasks') !== null) {
         isDailyTasksHidden = localStorage.getItem('hideDailyTasks') === 'true';
     }
-    
+
     switchRoster(savedRoster); // Set initial state
     loadStaff();
 
@@ -143,61 +143,61 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         menu.appendChild(setTimeItem);
     }
-        
-        if (menu && !document.getElementById('cm-task-links-wrapper')) {
-            const oldLink = document.getElementById('cm-task-link');
-            if (oldLink && oldLink.parentElement === menu) oldLink.remove();
-            const oldUnlink = document.getElementById('cm-task-unlink');
-            if (oldUnlink && oldUnlink.parentElement === menu) oldUnlink.remove();
 
-            const linkSubmenuWrapper = document.createElement('div');
-            linkSubmenuWrapper.className = 'cm-item cm-task has-submenu';
-            linkSubmenuWrapper.id = 'cm-task-links-wrapper';
-            linkSubmenuWrapper.innerHTML = 'Link Tasks ➔<div class="cm-submenu" id="cm-task-link-submenu"></div>';
-            menu.appendChild(linkSubmenuWrapper);
+    if (menu && !document.getElementById('cm-task-links-wrapper')) {
+        const oldLink = document.getElementById('cm-task-link');
+        if (oldLink && oldLink.parentElement === menu) oldLink.remove();
+        const oldUnlink = document.getElementById('cm-task-unlink');
+        if (oldUnlink && oldUnlink.parentElement === menu) oldUnlink.remove();
 
-            const linkSubmenu = document.getElementById('cm-task-link-submenu');
+        const linkSubmenuWrapper = document.createElement('div');
+        linkSubmenuWrapper.className = 'cm-item cm-task has-submenu';
+        linkSubmenuWrapper.id = 'cm-task-links-wrapper';
+        linkSubmenuWrapper.innerHTML = 'Link Tasks ➔<div class="cm-submenu" id="cm-task-link-submenu"></div>';
+        menu.appendChild(linkSubmenuWrapper);
 
-            const linkItem = document.createElement('div');
-            linkItem.className = 'cm-item';
-            linkItem.id = 'cm-task-link';
-            linkItem.innerText = 'Link This Task (By Name)';
-            linkItem.onclick = handleCmLinkTask;
-            linkSubmenu.appendChild(linkItem);
-            
-            const linkAllItem = document.createElement('div');
-            linkAllItem.className = 'cm-item';
-            linkAllItem.id = 'cm-task-link-all';
-            linkAllItem.innerText = 'Link ALL Tasks';
-            linkAllItem.onclick = handleCmLinkAllTasks;
-            linkSubmenu.appendChild(linkAllItem);
+        const linkSubmenu = document.getElementById('cm-task-link-submenu');
 
-            const unlinkItem = document.createElement('div');
-            unlinkItem.className = 'cm-item';
-            unlinkItem.id = 'cm-task-unlink';
-            unlinkItem.innerText = 'Unlink Task';
-            unlinkItem.onclick = handleCmUnlinkTask;
-            linkSubmenu.appendChild(unlinkItem);
-        }
+        const linkItem = document.createElement('div');
+        linkItem.className = 'cm-item';
+        linkItem.id = 'cm-task-link';
+        linkItem.innerText = 'Link This Task (By Name)';
+        linkItem.onclick = handleCmLinkTask;
+        linkSubmenu.appendChild(linkItem);
 
-        const colorItem1 = document.getElementById('cm-task-color1');
-        if (colorItem1 && colorItem1.parentElement === menu) {
-            const colorSubmenuWrapper = document.createElement('div');
-            colorSubmenuWrapper.className = 'cm-item cm-task has-submenu';
-            colorSubmenuWrapper.id = 'cm-task-colors-wrapper';
-            colorSubmenuWrapper.innerHTML = 'Color ➔<div class="cm-submenu" id="cm-task-color-submenu"></div>';
-            
-            menu.insertBefore(colorSubmenuWrapper, colorItem1);
-            const colorSubmenu = document.getElementById('cm-task-color-submenu');
-            
-            for (let i = 1; i <= 11; i++) {
-                const el = document.getElementById(`cm-task-color${i}`);
-                if (el) {
-                    el.classList.remove('cm-task');
-                    colorSubmenu.appendChild(el);
-                }
+        const linkAllItem = document.createElement('div');
+        linkAllItem.className = 'cm-item';
+        linkAllItem.id = 'cm-task-link-all';
+        linkAllItem.innerText = 'Link ALL Tasks';
+        linkAllItem.onclick = handleCmLinkAllTasks;
+        linkSubmenu.appendChild(linkAllItem);
+
+        const unlinkItem = document.createElement('div');
+        unlinkItem.className = 'cm-item';
+        unlinkItem.id = 'cm-task-unlink';
+        unlinkItem.innerText = 'Unlink Task';
+        unlinkItem.onclick = handleCmUnlinkTask;
+        linkSubmenu.appendChild(unlinkItem);
+    }
+
+    const colorItem1 = document.getElementById('cm-task-color1');
+    if (colorItem1 && colorItem1.parentElement === menu) {
+        const colorSubmenuWrapper = document.createElement('div');
+        colorSubmenuWrapper.className = 'cm-item cm-task has-submenu';
+        colorSubmenuWrapper.id = 'cm-task-colors-wrapper';
+        colorSubmenuWrapper.innerHTML = 'Color ➔<div class="cm-submenu" id="cm-task-color-submenu"></div>';
+
+        menu.insertBefore(colorSubmenuWrapper, colorItem1);
+        const colorSubmenu = document.getElementById('cm-task-color-submenu');
+
+        for (let i = 1; i <= 11; i++) {
+            const el = document.getElementById(`cm-task-color${i}`);
+            if (el) {
+                el.classList.remove('cm-task');
+                colorSubmenu.appendChild(el);
             }
         }
+    }
 
     document.querySelectorAll('button').forEach(btn => {
         if (btn.getAttribute('onclick') === 'clearWeeklyTasks()') {
@@ -232,17 +232,17 @@ function toggleTheme() {
 }
 
 async function toggleAdmin() {
-    if(isAdmin) {
+    if (isAdmin) {
         isAdmin = false;
         isStatsViewActive = false;
         document.body.classList.add('read-only');
         document.getElementById('adminBtn').innerText = 'Admin Login';
         document.getElementById('adminBtn').style.background = '#e53e3e';
         document.getElementById('adminPanel').style.display = 'none';
-        
+
         const defaultTasksBtn = document.getElementById('defaultTasksBtn');
         if (defaultTasksBtn) defaultTasksBtn.remove();
-        
+
         const updateIndexBtn = document.getElementById('updateIndexBtn');
         if (updateIndexBtn) updateIndexBtn.remove();
 
@@ -250,7 +250,7 @@ async function toggleAdmin() {
         if (statsDashboard) statsDashboard.style.display = 'none';
         const rotaDashboard = document.getElementById('rotaDashboard');
         if (rotaDashboard) rotaDashboard.style.display = 'block';
-        
+
         await customAlert('Logged out. Read-only mode enabled.');
     } else {
         const pwd = await showModal({
@@ -265,7 +265,7 @@ async function toggleAdmin() {
             document.getElementById('adminBtn').innerText = 'Logout Admin';
             document.getElementById('adminBtn').style.background = '#4a5568';
             document.getElementById('adminPanel').style.display = 'flex';
-            
+
             if (!document.getElementById('defaultTasksBtn')) {
                 const btn = document.createElement('button');
                 btn.id = 'defaultTasksBtn';
@@ -274,7 +274,7 @@ async function toggleAdmin() {
                 btn.onclick = openDefaultTasksManager;
                 document.getElementById('adminPanel').appendChild(btn);
             }
-            
+
             if (!document.getElementById('updateIndexBtn')) {
                 const btnUpdate = document.createElement('button');
                 btnUpdate.id = 'updateIndexBtn';
@@ -284,7 +284,7 @@ async function toggleAdmin() {
                 btnUpdate.onclick = promptUpdateIndexHtml;
                 document.querySelector('.container').appendChild(btnUpdate);
             }
-            
+
             await customAlert('Admin mode enabled.');
         } else if (pwd !== null) {
             await customAlert('Incorrect password.');
@@ -295,16 +295,16 @@ async function toggleAdmin() {
 
 async function promptUpdateIndexHtml() {
     if (!isAdmin) return;
-    
+
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.accept = '.html';
     fileInput.style.display = 'none';
-    
+
     fileInput.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        
+
         const pwd = await showModal({
             title: 'Input Required',
             type: 'prompt',
@@ -315,14 +315,14 @@ async function promptUpdateIndexHtml() {
             if (pwd !== null) await customAlert('Incorrect password.');
             return;
         }
-        
+
         if (!await customConfirm(`Are you sure you want to overwrite index.html with "${file.name}"? This could break the app.`)) {
             return;
         }
-        
+
         const formData = new FormData();
         formData.append('indexfile', file);
-        
+
         try {
             const response = await fetch('/api/admin/update-index', {
                 method: 'POST',
@@ -340,7 +340,7 @@ async function promptUpdateIndexHtml() {
             await customAlert('Error uploading index.html.');
         }
     };
-    
+
     document.body.appendChild(fileInput);
     fileInput.click();
     document.body.removeChild(fileInput);
@@ -413,7 +413,7 @@ function showModal(options) {
                 label.className = 'modal-label';
                 label.textContent = inp.label;
                 inputContainer.appendChild(label);
-                
+
                 const el = document.createElement('input');
                 el.type = inp.inputType || 'text';
                 el.className = 'modal-input';
@@ -422,8 +422,8 @@ function showModal(options) {
                 inputContainer.appendChild(el);
                 inputs.push(el);
             });
-            if(inputs.length > 0) setTimeout(() => inputs[0].focus(), 10);
-            
+            if (inputs.length > 0) setTimeout(() => inputs[0].focus(), 10);
+
             const okBtn = document.createElement('button');
             okBtn.textContent = 'OK';
             okBtn.className = 'modal-btn modal-btn-primary';
@@ -449,9 +449,9 @@ function showModal(options) {
             cancelBtn.onclick = () => closeAndResolve(null);
             buttonsContainer.appendChild(okBtn);
             buttonsContainer.appendChild(cancelBtn);
-            
+
             inputEl.addEventListener('keypress', (e) => {
-                if(e.key === 'Enter') closeAndResolve(inputEl.value);
+                if (e.key === 'Enter') closeAndResolve(inputEl.value);
             });
         }
 
@@ -477,7 +477,7 @@ async function customPrompt(msg, def) { return showModal({ title: 'Input Require
 async function loadStaff() {
     const res = await fetch('/api/staff');
     allAvailableStaff = await res.json();
-    
+
     const renderSubmenu = (id, clickHandlerName) => {
         const submenu = document.getElementById(id);
         if (submenu) {
@@ -524,7 +524,7 @@ async function addStaffMember() {
     if (result && result.surname && result.firstname) {
         const fullName = `${result.surname.trim()}, ${result.firstname.trim()}`;
         const res = await fetch('/api/staff', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: fullName }) });
-        if (res.ok) { await loadStaff(); renderStaffManager(); } 
+        if (res.ok) { await loadStaff(); renderStaffManager(); }
         else { const err = await res.json(); await customAlert(err.error || 'Failed to add staff.'); }
     }
 }
@@ -533,7 +533,7 @@ async function editStaffMember(id, currentName) {
     const newName = await customPrompt('Edit Staff Name (Surname, Firstname):', currentName);
     if (newName && newName.trim() !== '' && newName !== currentName) {
         const res = await fetch(`/api/staff/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName.trim() }) });
-        if (res.ok) { await loadStaff(); renderStaffManager(); loadRoster(); } 
+        if (res.ok) { await loadStaff(); renderStaffManager(); loadRoster(); }
         else { const err = await res.json(); await customAlert(err.error || 'Failed to update staff.'); }
     }
 }
@@ -541,20 +541,20 @@ async function editStaffMember(id, currentName) {
 async function deleteStaffMember(id) {
     if (await customConfirm('Are you sure? This will delete the staff member and ALL their assigned shifts and tasks.')) {
         const res = await fetch(`/api/staff/${id}`, { method: 'DELETE' });
-        if (res.ok) { await loadStaff(); renderStaffManager(); loadRoster(); } 
+        if (res.ok) { await loadStaff(); renderStaffManager(); loadRoster(); }
         else { await customAlert('Failed to delete staff.'); }
     }
 }
 
 async function openDefaultTasksManager() {
     if (!isAdmin) return;
-    
+
     const staffRes = await fetch('/api/staff');
     const staff = await staffRes.json();
-    
+
     const tasksRes = await fetch('/api/tasks/unique');
     const uniqueTasks = await tasksRes.json();
-    
+
     const overlay = document.getElementById('customModal');
     const title = document.getElementById('modalTitle');
     const message = document.getElementById('modalMessage');
@@ -570,26 +570,26 @@ async function openDefaultTasksManager() {
     table.style.width = '100%';
     table.style.marginTop = '10px';
     table.innerHTML = `<tr><th style="text-align:left; padding-bottom:5px;">Staff Name</th><th style="text-align:left; padding-bottom:5px;">Default Task</th></tr>`;
-    
+
     const selects = [];
-    
+
     staff.forEach(s => {
         const tr = document.createElement('tr');
         const tdName = document.createElement('td');
         tdName.textContent = s.name;
-        
+
         const tdTask = document.createElement('td');
         const select = document.createElement('select');
         select.className = 'modal-input';
         select.style.marginBottom = '5px';
         select.style.width = '100%';
         select.dataset.staffId = s.id;
-        
+
         const optNone = document.createElement('option');
         optNone.value = '';
         optNone.textContent = '-- None --';
         select.appendChild(optNone);
-        
+
         uniqueTasks.forEach(t => {
             const opt = document.createElement('option');
             opt.value = t.task_name;
@@ -597,20 +597,20 @@ async function openDefaultTasksManager() {
             if (s.default_task === t.task_name) opt.selected = true;
             select.appendChild(opt);
         });
-        
+
         selects.push(select);
         tdTask.appendChild(select);
         tr.appendChild(tdName);
         tr.appendChild(tdTask);
         table.appendChild(tr);
     });
-    
+
     const scrollContainer = document.createElement('div');
     scrollContainer.style.maxHeight = '400px';
     scrollContainer.style.overflowY = 'auto';
     scrollContainer.appendChild(table);
     inputContainer.appendChild(scrollContainer);
-    
+
     const saveBtn = document.createElement('button');
     saveBtn.textContent = 'Save Defaults';
     saveBtn.className = 'modal-btn modal-btn-primary';
@@ -619,13 +619,13 @@ async function openDefaultTasksManager() {
             id: sel.dataset.staffId,
             default_task: sel.value
         }));
-        
+
         const res = await fetch('/api/staff/defaults', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ updates })
         });
-        
+
         if (res.ok) {
             overlay.style.display = 'none';
             await loadStaff();
@@ -634,21 +634,21 @@ async function openDefaultTasksManager() {
             await customAlert('Failed to update defaults.');
         }
     };
-    
+
     const cancelBtn = document.createElement('button');
     cancelBtn.textContent = 'Cancel';
     cancelBtn.className = 'modal-btn modal-btn-secondary';
     cancelBtn.onclick = () => { overlay.style.display = 'none'; };
-    
+
     buttonsContainer.appendChild(saveBtn);
     buttonsContainer.appendChild(cancelBtn);
-    
+
     overlay.style.display = 'flex';
 }
 
 async function openStatistics(timeRange = 'all') {
     if (!isAdmin) return;
-    
+
     if (typeof Chart === 'undefined') {
         await customAlert('Chart.js library is missing. Please download it and place it in the public folder to view statistics offline.');
         return;
@@ -658,7 +658,7 @@ async function openStatistics(timeRange = 'all') {
     try {
         const res = await fetch(`/api/statistics?rosterType=${currentRoster}&timeRange=${timeRange}`);
         const stats = await res.json();
-        
+
         if (!stats.success) {
             await customAlert('Failed to load statistics.');
             return;
@@ -704,7 +704,7 @@ async function openStatistics(timeRange = 'all') {
                 <div id="statsTextContent" style="color: inherit; font-size: 14px;"></div>
             </div>
         `;
-        
+
         let msg = `<strong>--- Missing Assignments ---</strong><br>`;
         msg += `• Manually Added Missing: ${stats.manualMissing}<br>`;
         msg += `• Ignored Missing Slots: ${stats.totalIgnored}<br><br>`;
@@ -782,10 +782,10 @@ async function openStatistics(timeRange = 'all') {
             userContainer.style.background = 'transparent';
         } else {
             userContainer.innerHTML = '<div style="position: relative; width: 100%;"><canvas id="userStackedChart"></canvas></div>';
-            
+
             const allUniqueTasks = new Set();
             stats.userTasks.forEach(u => u.tasks.forEach(t => allUniqueTasks.add(t.task)));
-            
+
             const tasksList = Array.from(allUniqueTasks).filter(t => t !== 'Unassigned');
             tasksList.push('Unassigned');
 
@@ -820,11 +820,11 @@ async function openStatistics(timeRange = 'all') {
                     indexAxis: 'y',
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { 
+                    plugins: {
                         title: { display: true, text: 'Normalized Task Distribution per User (%)' },
                         tooltip: {
                             callbacks: {
-                                label: function(context) {
+                                label: function (context) {
                                     const userIdx = context.dataIndex;
                                     const u = stats.userTasks[userIdx];
                                     const taskName = context.dataset.label;
@@ -851,7 +851,7 @@ async function openStatistics(timeRange = 'all') {
     }
 }
 
-window.closeStatistics = function() {
+window.closeStatistics = function () {
     isStatsViewActive = false;
     const statsContainer = document.getElementById('statsDashboard');
     if (statsContainer) statsContainer.style.display = 'none';
@@ -865,7 +865,7 @@ function exportDatabase() {
 
 async function exportTasksDatabase() {
     if (!isAdmin) return;
-    
+
     const choice = await showModal({
         title: 'Export Tasks',
         message: 'Do you want to export all tasks in the database, or just the tasks for the currently viewed week?',
@@ -875,9 +875,9 @@ async function exportTasksDatabase() {
             { text: 'Cancel', value: null, class: 'modal-btn-secondary' }
         ]
     });
-    
+
     if (!choice) return;
-    
+
     if (choice === 'all') {
         window.location.href = `/api/database/export/tasks?rosterType=${currentRoster}`;
     } else {
@@ -1021,7 +1021,7 @@ async function uploadFile(overrideMode = null) {
 
     const response = await fetch('/api/upload', { method: 'POST', body: formData });
     const result = await response.json();
-    
+
     if (result.requiresConfirmation) {
         const choice = await showModal({
             title: 'Sync Conflict',
@@ -1075,7 +1075,7 @@ async function uploadFile(overrideMode = null) {
         if (result.summary) {
             const { deleted, added, recoveredTasks } = result.summary;
             if (deleted.length > 0 || added.length > 0 || (recoveredTasks && recoveredTasks.length > 0)) summaryMsg += '\n\n';
-            
+
             if (recoveredTasks && recoveredTasks.length > 0) {
                 summaryMsg += `⚠️ PRIORITY: ORPHANED TASKS RECOVERED ⚠️\n`;
                 summaryMsg += `The following tasks were attached to deleted shifts. They have been preserved on the Missing Assignment for their respective roles:\n`;
@@ -1100,7 +1100,7 @@ async function uploadFile(overrideMode = null) {
                 });
             }
         }
-        
+
         await customAlert(summaryMsg.trim());
         loadStaff();
         loadRoster();
@@ -1112,12 +1112,12 @@ async function uploadFile(overrideMode = null) {
 async function autoGroupTasks() {
     if (!isAdmin) return;
     if (!await customConfirm('Are you sure you want to reorder all staff within their roles to group similar tasks together?')) return;
-    
+
     const start = document.getElementById('startDate').value;
     const d = new Date(start + 'T12:00:00Z');
     d.setUTCDate(d.getUTCDate() + 6);
     const end = d.toISOString().split('T')[0];
-    
+
     try {
         const response = await fetch('/api/roster/auto-group-tasks', {
             method: 'POST',
@@ -1133,12 +1133,12 @@ async function autoGroupTasks() {
 
 async function clearWeeklyTasks() {
     if (!isAdmin) return;
-    
+
     const start = document.getElementById('startDate').value;
     const d = new Date(start + 'T12:00:00Z');
     d.setUTCDate(d.getUTCDate() + 6);
     const end = d.toISOString().split('T')[0];
-    
+
     const overlay = document.getElementById('customModal');
     const title = document.getElementById('modalTitle');
     const message = document.getElementById('modalMessage');
@@ -1189,10 +1189,10 @@ async function clearWeeklyTasks() {
     clearBtn.className = 'modal-btn modal-btn-danger';
     clearBtn.onclick = async () => {
         if (!await customConfirm('Are you absolutely sure you want to delete this data? This cannot be undone.')) return;
-        
+
         const type = typeSelect.value;
         const scope = scopeSelect.value;
-        
+
         try {
             const response = await fetch(`/api/data/clear?startDate=${start}&endDate=${end}&rosterType=${currentRoster}&type=${type}&scope=${scope}`, {
                 method: 'DELETE'
@@ -1207,15 +1207,15 @@ async function clearWeeklyTasks() {
             console.error(err);
         }
     };
-    
+
     const cancelBtn = document.createElement('button');
     cancelBtn.textContent = 'Cancel';
     cancelBtn.className = 'modal-btn modal-btn-secondary';
     cancelBtn.onclick = () => { overlay.style.display = 'none'; };
-    
+
     buttonsContainer.appendChild(clearBtn);
     buttonsContainer.appendChild(cancelBtn);
-    
+
     overlay.style.display = 'flex';
 }
 
@@ -1252,27 +1252,27 @@ async function loadRoster() {
     const rawStart = document.getElementById('startDate').value || new Date().toISOString().split('T')[0];
     const start = getMonday(rawStart);
     document.getElementById('startDate').value = start;
-    
+
     const d = new Date(start + 'T12:00:00Z');
     d.setUTCDate(d.getUTCDate() + 6);
     const end = d.toISOString().split('T')[0];
-    
+
     const response = await fetch(`/api/roster?startDate=${start}&endDate=${end}&rosterType=${currentRoster}`);
     const data = await response.json();
-    
+
     const tasksResponse = await fetch(`/api/tasks?startDate=${start}&endDate=${end}&rosterType=${currentRoster}`);
     const tasksData = await tasksResponse.json();
-    
+
     const metaResponse = await fetch(`/api/metadata?startDate=${start}&endDate=${end}&rosterType=${currentRoster}`);
     const metaData = await metaResponse.json();
-    
+
     const pubResponse = await fetch(`/api/published?startDate=${start}&endDate=${end}&rosterType=${currentRoster}`);
     const pubData = await pubResponse.json();
-    
+
     renderGridDashboard(data, tasksData, metaData, pubData);
 }
 
-window.togglePublishWeek = async function(wk, isPublished) {
+window.togglePublishWeek = async function (wk, isPublished) {
     if (!isAdmin) return;
     try {
         await fetch('/api/published', {
@@ -1291,7 +1291,7 @@ window.togglePublishWeek = async function(wk, isPublished) {
 function getMonday(dateStr) {
     const d = new Date(dateStr + 'T12:00:00Z');
     const day = d.getUTCDay();
-    const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1); 
+    const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1);
     d.setUTCDate(diff);
     return d.toISOString().split('T')[0];
 }
@@ -1299,7 +1299,7 @@ function getMonday(dateStr) {
 // Generate an explicit list of sequential dates from Mon-Sun based on a Monday start date
 function getWeekDaysArray(mondayStr) {
     const arr = [];
-    for(let i=0; i<7; i++) {
+    for (let i = 0; i < 7; i++) {
         const d = new Date(mondayStr + 'T12:00:00Z');
         d.setUTCDate(d.getUTCDate() + i);
         arr.push(d.toISOString().split('T')[0]);
@@ -1320,10 +1320,10 @@ function getRoleColor(roleName) {
     return `background: hsl(${hue}, 40%, 25%) !important; border-color: hsl(${hue}, 40%, 35%); border-left: 4px solid hsl(${hue}, 60%, 50%);`;
 }
 
-window.toggleDailyTasks = function() {
+window.toggleDailyTasks = function () {
     isDailyTasksHidden = !isDailyTasksHidden;
     localStorage.setItem('hideDailyTasks', isDailyTasksHidden);
-    
+
     document.querySelectorAll('.dt-header').forEach(el => {
         if (isDailyTasksHidden) {
             el.classList.add('collapsed');
@@ -1333,7 +1333,7 @@ window.toggleDailyTasks = function() {
             el.querySelector('.dt-toggle-icon').innerText = '▼';
         }
     });
-    
+
     document.querySelectorAll('.tasks-cell').forEach(el => {
         el.classList.toggle('collapsed', isDailyTasksHidden);
     });
@@ -1344,13 +1344,13 @@ function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) 
     container.innerHTML = '';
 
     let renderData = [...(data || [])];
-    
+
     if (previewState.active) {
         renderData = renderData.map(item => {
-            const delMatch = previewState.deleted.find(d => 
+            const delMatch = previewState.deleted.find(d =>
                 d.previewStatus === 'pending' &&
-                ((d.entry_id && d.entry_id === item.entry_id) || 
-                 (d.date === item.date && d.staff === item.staff_name && d.role === item.shift_title))
+                ((d.entry_id && d.entry_id === item.entry_id) ||
+                    (d.date === item.date && d.staff === item.staff_name && d.role === item.shift_title))
             );
             if (delMatch) {
                 return { ...item, isPreviewDelete: true, previewStatus: delMatch.previewStatus, previewId: delMatch.previewId };
@@ -1370,7 +1370,7 @@ function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) 
 
     // Structure: weeks[weekCommencingDate][shiftTitle][targetDate] = []
     const weeks = {};
-    
+
     // Force pre-populate exactly 1 week based on the date filter so the view never collapses
     const uiStart = document.getElementById('startDate').value;
     if (uiStart) {
@@ -1389,10 +1389,10 @@ function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) 
 
     (renderData || []).forEach(entry => {
         const wkCommence = getMonday(entry.date);
-        
+
         // ENFORCE STRICT 1-WEEK DISPLAY
         if (!weeks[wkCommence]) return;
-        
+
         const roleRow = entry.shift_title || "General QA";
         const dateKey = entry.date;
 
@@ -1414,7 +1414,7 @@ function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) 
     if (uniqueRolesSet.size === 0) {
         uniqueRolesSet.add("Elec").add("QA L").add("IMRT").add("QA");
     }
-    
+
     const dynamicRolesList = Array.from(uniqueRolesSet).sort();
     const allStaff = Array.from(uniqueStaffSet).sort();
 
@@ -1433,13 +1433,13 @@ function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) 
     sortedWeeks.forEach(wk => {
         const weekBlock = document.createElement('div');
         weekBlock.className = 'week-block';
-        
+
         const displayDate = new Date(wk).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-        
+
         const pubRecord = pubData.find(p => p.week_commencing === wk);
         const isPublished = pubRecord ? pubRecord.is_published === 1 : false;
         const isDraft = !isPublished;
-        
+
         let headerControls = '';
         if (isAdmin) {
             headerControls = `
@@ -1452,7 +1452,7 @@ function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) 
             headerControls = `<span style="color: #fc8181; font-size: 16px; margin-left: 15px; font-weight: bold;">(DRAFT)</span>`;
             weekBlock.classList.add('draft-week');
         }
-        
+
         weekBlock.innerHTML = `<div class="week-header" style="display: flex; align-items: center;">Week Commencing: ${displayDate} ${headerControls}</div>`;
 
         const grid = document.createElement('div');
@@ -1460,7 +1460,7 @@ function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) 
 
         grid.innerHTML += `<div class="grid-header" style="background:#1a202c; border-bottom:2px solid #4a5568; grid-column: span 2;">e-roster Role</div>`;
         const weekDates = getWeekDaysArray(wk);
-        
+
         weekDates.forEach((dStr, idx) => {
             const isToday = (dStr === todayStr);
             const todayClass = isToday ? ' today-header' : '';
@@ -1474,20 +1474,20 @@ function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) 
             <span>Daily Tasks</span>
             <span class="dt-toggle-icon">${isDailyTasksHidden ? '▶' : '▼'}</span>
         </div>`;
-        
+
         weekDates.forEach(dayDate => {
             const dailyTasks = tasksData.filter(t => t.date === dayDate && !t.shift_title);
             const todayCellClass = (dayDate === todayStr) ? ' today-cell' : '';
             const dtCellClass = isDailyTasksHidden ? ' collapsed' : '';
             let cellHTML = `<div class="grid-cell tasks-cell${todayCellClass}${dtCellClass}" data-date="${dayDate}">`;
             cellHTML += `<div style="text-align: right; margin-bottom: 5px;"><button class="add-task-btn" onclick="addTask('${dayDate}')" style="padding: 3px 8px; font-size: 11px; background: #ecc94b; color: #1a202c;">➕ Add Task</button></div>`;
-            
+
             dailyTasks.forEach(task => {
                 let assignedCount = 0;
                 renderData.forEach(entry => {
                     if (entry.date === dayDate && entry.status !== 'Sick' && entry.status !== 'Unavailable' && !entry.isPreviewDelete) {
                         const hasTask = (entry.assigned_tasks && entry.assigned_tasks.some(at => at.task_name === task.task_name)) ||
-                                        (entry.tasks && entry.tasks.includes(task.task_name));
+                            (entry.tasks && entry.tasks.includes(task.task_name));
                         if (hasTask) {
                             assignedCount++;
                         }
@@ -1506,7 +1506,7 @@ function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) 
                     </div>
                 `;
             });
-            
+
             cellHTML += `</div>`;
             grid.innerHTML += cellHTML;
         });
@@ -1537,7 +1537,7 @@ function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) 
         roleRows.forEach(role => {
             const signatures = new Set();
             let hasUnassigned = false;
-            
+
             weekDates.forEach(dayDate => {
                 const allAllocations = weeks[wk][role][dayDate] || [];
                 allAllocations.forEach(alloc => {
@@ -1547,23 +1547,23 @@ function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) 
                         signatures.add(alloc.assigned_tasks[0].task_name);
                     }
                 });
-                
+
                 if (isAdmin) {
                     const meta = metaData.find(m => m.date === dayDate && m.shift_title === role) || {};
                     const isWeekend = (new Date(dayDate + 'T12:00:00Z').getUTCDay() % 6 === 0);
                     const isOverflowRole = /\d+$/.test(role) && parseInt(role.match(/\d+$/)[0], 10) > 1;
                     const shouldShowAutoEmpty = (allAllocations.length === 0 && !isWeekend && !isOverflowRole);
                     if (shouldShowAutoEmpty || (meta.manual_add || 0) > 0) hasUnassigned = true;
-                    
+
                     const orphanedTasks = tasksData.filter(t => t.date === dayDate && t.shift_title === role);
                     if (orphanedTasks.length > 0) hasUnassigned = true;
                 }
             });
-            
+
             if (hasUnassigned || signatures.size === 0) {
                 signatures.add('Unassigned');
             }
-            
+
             const weekTaskRanks = {};
             let rankIndex = 0;
             tasksData.forEach(t => {
@@ -1571,21 +1571,21 @@ function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) 
                     weekTaskRanks[t.task_name] = rankIndex++;
                 }
             });
-            
+
             const sortedSignatures = Array.from(signatures).sort((a, b) => {
                 if (a === 'Unassigned') return -1;
                 if (b === 'Unassigned') return 1;
-                
+
                 const rankA = weekTaskRanks[a] !== undefined ? weekTaskRanks[a] : 999;
                 const rankB = weekTaskRanks[b] !== undefined ? weekTaskRanks[b] : 999;
-                
+
                 if (rankA !== rankB) return rankA - rankB;
                 return a.localeCompare(b);
             });
-            
+
             const rowSpan = sortedSignatures.length;
             grid.innerHTML += `<div class="grid-cell role-title-cell" style="grid-row: span ${rowSpan};">${role}</div>`;
-            
+
             sortedSignatures.forEach((sig, sigIndex) => {
                 let sigColor = 'color-10'; // Default gray background for unassigned/unknown
                 if (sig !== 'Unassigned') {
@@ -1596,16 +1596,16 @@ function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) 
                 grid.innerHTML += `<div class="grid-cell ${sigColor}" style="display: flex; align-items: center; justify-content: center; padding: 2px; overflow: hidden; border: 1px solid rgba(0,0,0,0.1);">
                     <span class="task-indicator-text" style="writing-mode: vertical-rl; transform: rotate(180deg); font-size: 11px; font-weight: bold; white-space: nowrap; text-align: center;">${sigDisplayName}</span>
                 </div>`;
-                
+
                 weekDates.forEach(dayDate => {
                     const allAllocations = weeks[wk][role][dayDate] || [];
                     const allocations = allAllocations.filter(alloc => {
-                        const allocSig = alloc.assigned_tasks && alloc.assigned_tasks.length > 0 
+                        const allocSig = alloc.assigned_tasks && alloc.assigned_tasks.length > 0
                             ? alloc.assigned_tasks[0].task_name
                             : 'Unassigned';
                         return allocSig === sig;
                     });
-                    
+
                     const todayCellClass = (dayDate === todayStr) ? ' today-cell' : '';
                     let cellHTML = `<div class="grid-cell dropzone${todayCellClass}" data-role="${role}" data-date="${dayDate}" data-task-signature="${sig.replace(/"/g, '&quot;')}" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="drop(event)">`;
 
@@ -1613,36 +1613,36 @@ function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) 
                         const meta = metaData.find(m => m.date === dayDate && m.shift_title === role) || {};
                         const isWeekend = (new Date(dayDate + 'T12:00:00Z').getUTCDay() % 6 === 0);
                         const isOverflowRole = /\d+$/.test(role) && parseInt(role.match(/\d+$/)[0], 10) > 1;
-                        
+
                         const shouldShowAutoEmpty = (allAllocations.length === 0 && !isWeekend && !isOverflowRole);
                         const manualAddCount = meta.manual_add || 0;
 
                         let emptyChipsCount = (shouldShowAutoEmpty ? 1 : 0) + manualAddCount;
                         if (emptyChipsCount < 0) emptyChipsCount = 0;
-                        if (!isAdmin) emptyChipsCount = 0; 
-                        
+                        if (!isAdmin) emptyChipsCount = 0;
+
                         let renderedOrphanedTasks = false;
 
                         for (let i = 0; i < emptyChipsCount; i++) {
                             const commentHtml = meta.comment ? `<div class="empty-comment">📝 ${meta.comment}</div>` : '';
                             const stateClass = meta.is_ignored ? 'ignored' : 'missing';
-                            
+
                             let orphanedTasksHTML = '';
                             if (!renderedOrphanedTasks) {
                                 const orphanedTasks = tasksData.filter(t => t.date === dayDate && t.shift_title === role);
                                 if (orphanedTasks.length > 0) {
-                                orphanedTasksHTML = `<div class="assigned-tasks-container">` + 
-                                    orphanedTasks.map(t => {
-                                        let durationSuffix = '';
-                                        if (t.duration === 'AM') durationSuffix = '<span class="duration-badge">AM</span>';
-                                        else if (t.duration === 'PM') durationSuffix = '<span class="duration-badge">PM</span>';
-                                        return `
+                                    orphanedTasksHTML = `<div class="assigned-tasks-container">` +
+                                        orphanedTasks.map(t => {
+                                            let durationSuffix = '';
+                                            if (t.duration === 'AM') durationSuffix = '<span class="duration-badge">AM</span>';
+                                            else if (t.duration === 'PM') durationSuffix = '<span class="duration-badge">PM</span>';
+                                            return `
                                         <div class="assigned-task-tag ${t.color || 'color-1'}" draggable="true" ondragstart="dragTaskStart(event, ${t.id}, this.getAttribute('data-task-name'), this.getAttribute('data-task-duration'), this.getAttribute('data-task-color'), this.getAttribute('data-task-group-id'))" data-task-id="${t.id}" data-task-type="daily" data-task-duration="${t.duration || 'All Day'}" data-task-color="${t.color || 'color-1'}" data-task-name="${t.task_name.replace(/"/g, '&quot;')}" data-task-group-id="${t.group_id || ''}">
                                             ${t.task_name}${durationSuffix}
                                             <button class="delete-task-tag-btn" onclick="deleteTask(${t.id}, event, '${t.group_id || ''}')" title="Remove Task">✖</button>
                                         </div>
                                         `;
-                                    }).join('') + `</div>`;
+                                        }).join('') + `</div>`;
                                 }
                                 renderedOrphanedTasks = true;
                             }
@@ -1658,7 +1658,7 @@ function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) 
                             </div>`;
                         }
                     }
-                    
+
                     if (allocations.length > 0) {
                         allocations.forEach(alloc => {
                             let chipClass = 'allocation-chip';
@@ -1700,7 +1700,7 @@ function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) 
 
                             let assignedTasksHTML = '';
                             if (alloc.assigned_tasks && alloc.assigned_tasks.length > 0) {
-                                assignedTasksHTML = `<div class="assigned-tasks-container">` + 
+                                assignedTasksHTML = `<div class="assigned-tasks-container">` +
                                     alloc.assigned_tasks.map(t => {
                                         let durationSuffix = '';
                                         if (t.duration === 'AM') durationSuffix = '<span class="duration-badge">AM</span>';
@@ -1716,7 +1716,7 @@ function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) 
 
                             const isMultiRole = staffDailyRoles[dayDate][alloc.staff_name] > 1;
                             const multiRoleIcon = isMultiRole ? `<span title="Assigned to multiple roles today" style="font-size: 11px; margin-left: 4px; cursor: help;">⚠️</span>` : '';
-                            
+
                             let shiftTimeHTML = '';
                             if (alloc.shift_time) {
                                 shiftTimeHTML = `<div class="shift-time">🕒 ${alloc.shift_time}</div>`;
@@ -1780,17 +1780,17 @@ function renderGridDashboard(data, tasksData = [], metaData = [], pubData = []) 
 
 // Removes a specific shift from the roster completely
 async function deleteShift(entryId) {
-    if(!isAdmin) return;
-    
+    if (!isAdmin) return;
+
     const entryIds = selectedShifts.has(String(entryId)) ? Array.from(selectedShifts) : [entryId];
-    
+
     if (entryIds.length > 1) {
         const confirmed = await confirmMultiSelection(entryIds, 'delete assignments completely');
         if (!confirmed) return;
     } else {
         if (!await customConfirm('Are you sure you want to remove this staff member from this shift?')) return;
     }
-    
+
     try {
         const promises = entryIds.map(id => fetch(`/api/roster/shift/${id}`, { method: 'DELETE' }));
         const results = await Promise.all(promises);
@@ -1806,8 +1806,8 @@ async function deleteShift(entryId) {
 }
 
 async function addTask(date) {
-    if(!isAdmin) return;
-    
+    if (!isAdmin) return;
+
     const result = await showModal({
         title: 'Add New Task',
         type: 'multi-prompt',
@@ -1817,28 +1817,28 @@ async function addTask(date) {
         ],
         checkbox: { label: 'Skip Weekends', checked: true }
     });
-    
+
     if (!result || !result.action || !result.action.taskName || result.action.taskName.trim() === '') return;
     const taskName = result.action.taskName.trim();
     let durationDays = parseInt(result.action.duration);
     if (isNaN(durationDays) || durationDays < 1) durationDays = 1;
     const skipWeekends = result.checked;
-    
+
     // Dynamically choose color 1 through 10 based on existing tasks for this day so they cycle through correctly
     const existingCount = document.querySelectorAll(`.grid-cell[data-date="${date}"] .task-chip`).length;
     const colors = ['color-1', 'color-2', 'color-3', 'color-4', 'color-5', 'color-6', 'color-7', 'color-8', 'color-9', 'color-10', 'color-11'];
     const nextColor = colors[existingCount % 11];
-    
+
     const groupId = durationDays > 1 ? Date.now().toString() + Math.random().toString(36).substring(2, 7) : null;
-    
+
     const promises = [];
     let currentLoopDate = new Date(date + 'T12:00:00Z');
     let daysAdded = 0;
-    
+
     while (daysAdded < durationDays) {
         const dayOfWeek = currentLoopDate.getUTCDay();
         const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
-        
+
         if (!skipWeekends || !isWeekend) {
             const targetDate = currentLoopDate.toISOString().split('T')[0];
             promises.push(fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: targetDate, task_name: taskName, color: nextColor, group_id: groupId, rosterType: currentRoster }) }));
@@ -1852,8 +1852,8 @@ async function addTask(date) {
 
 // Removes a specific assigned task
 async function deleteAssignedTask(ev, shiftTaskId, groupId) {
-    if(!isAdmin) return;
-    ev.stopPropagation(); 
+    if (!isAdmin) return;
+    ev.stopPropagation();
     if (!await customConfirm('Are you sure you want to remove this task?')) return;
 
     try {
@@ -1865,7 +1865,7 @@ async function deleteAssignedTask(ev, shiftTaskId, groupId) {
 }
 
 async function deleteTask(taskId, ev, groupId) {
-    if(!isAdmin) return;
+    if (!isAdmin) return;
     if (ev) ev.stopPropagation();
     let mode = 'single';
     if (groupId && groupId !== 'null' && groupId !== '') {
@@ -1889,7 +1889,7 @@ async function deleteTask(taskId, ev, groupId) {
 
 // --- HTML5 DRAG AND DROP FUNCTIONS ---
 function dragStart(ev, entryId) {
-    if(!isAdmin) { ev.preventDefault(); return; }
+    if (!isAdmin) { ev.preventDefault(); return; }
 
     const draggedChip = document.querySelector(`[data-entry-id='${entryId}']`);
     let entryIdsToMove = [entryId];
@@ -1915,13 +1915,13 @@ function dragStart(ev, entryId) {
 }
 
 function dragTaskStart(ev, taskId, taskName, duration, color, groupId) {
-    if(!isAdmin) { ev.preventDefault(); return; }
+    if (!isAdmin) { ev.preventDefault(); return; }
     ev.dataTransfer.setData("application/json", JSON.stringify({ type: 'daily_task', task_id: taskId, task_name: taskName, duration: duration, color: color, group_id: groupId }));
 }
 
 function dragAssignedTaskStart(ev, shiftTaskId, taskName, duration, color, groupId) {
-    if(!isAdmin) { ev.preventDefault(); return; }
-    ev.stopPropagation(); 
+    if (!isAdmin) { ev.preventDefault(); return; }
+    ev.stopPropagation();
     ev.dataTransfer.setData("application/json", JSON.stringify({ type: 'assigned_task', shift_task_id: shiftTaskId, task_name: taskName, duration: duration, color: color, group_id: groupId }));
 }
 
@@ -1932,14 +1932,14 @@ function allowDrop(ev) {
     const emptyChip = ev.target.closest('.empty-chip');
     const tasksCell = ev.target.closest('.tasks-cell');
     const taskChip = ev.target.closest('.task-chip[data-task-type="daily"]');
-    
+
     if (shiftChip || emptyChip) {
         const targetChip = shiftChip || emptyChip;
         let entryId = targetChip.getAttribute('data-entry-id');
         if (emptyChip) {
             entryId = `empty|${emptyChip.getAttribute('data-date')}|${emptyChip.getAttribute('data-role')}`;
         }
-        
+
         if (selectedShifts.size > 0) {
             selectedShifts.forEach(id => {
                 if (String(id).startsWith('empty|')) {
@@ -1977,14 +1977,14 @@ function dragLeave(ev) {
     const emptyChip = ev.target.closest('.empty-chip');
     const tasksCell = ev.target.closest('.tasks-cell');
     const taskChip = ev.target.closest('.task-chip[data-task-type="daily"]');
-    
+
     if (dropzone && (!ev.relatedTarget || !dropzone.contains(ev.relatedTarget))) {
         dropzone.classList.remove('drag-over');
     }
     if (tasksCell && (!ev.relatedTarget || !tasksCell.contains(ev.relatedTarget))) {
         tasksCell.classList.remove('drag-over');
     }
-    if ((targetShiftChip && (!ev.relatedTarget || !targetShiftChip.contains(ev.relatedTarget))) || 
+    if ((targetShiftChip && (!ev.relatedTarget || !targetShiftChip.contains(ev.relatedTarget))) ||
         (emptyChip && (!ev.relatedTarget || !emptyChip.contains(ev.relatedTarget))) ||
         (taskChip && (!ev.relatedTarget || !taskChip.contains(ev.relatedTarget)))) {
         document.querySelectorAll('.drag-over-shift').forEach(el => el.classList.remove('drag-over-shift'));
@@ -1992,22 +1992,22 @@ function dragLeave(ev) {
 }
 
 async function drop(ev) {
-    if(!isAdmin) return;
+    if (!isAdmin) return;
     ev.preventDefault();
     const dropzone = ev.target.closest('.dropzone');
     const targetShiftChip = ev.target.closest('.allocation-chip');
     const emptyChip = ev.target.closest('.empty-chip');
     const tasksCell = ev.target.closest('.tasks-cell');
     const targetTaskChip = ev.target.closest('.task-chip[data-task-type="daily"]');
-    
+
     if (dropzone) dropzone.classList.remove('drag-over');
     if (tasksCell) tasksCell.classList.remove('drag-over');
     document.querySelectorAll('.drag-over-shift').forEach(el => el.classList.remove('drag-over-shift'));
-    
+
     let data;
     try {
         data = JSON.parse(ev.dataTransfer.getData("application/json"));
-    } catch(e) {
+    } catch (e) {
         const plainData = ev.dataTransfer.getData("text/plain");
         if (plainData && dropzone) {
             data = { type: 'shift', entry_id: plainData };
@@ -2015,23 +2015,23 @@ async function drop(ev) {
             return;
         }
     }
-    
+
     if (data.type === 'shift') {
         const draggedEntryId = data.entry_id;
         const draggedChip = document.querySelector(`[data-entry-id='${draggedEntryId}']`);
         if (!dropzone || !draggedChip) return;
-        
+
         const newRole = dropzone.getAttribute('data-role');
         const dropDate = dropzone.getAttribute('data-date');
         const targetTaskSignature = dropzone.getAttribute('data-task-signature');
-        
+
         let entryIdsToMove = [draggedEntryId];
         if (selectedShifts.has(String(draggedEntryId))) {
             entryIdsToMove = Array.from(selectedShifts).filter(id => !String(id).startsWith('empty|'));
         }
-        
+
         const isSingleMoveSameDropzone = entryIdsToMove.length === 1 && dropzone.isSameNode(draggedChip.parentElement);
-        
+
         if (isSingleMoveSameDropzone) {
             if (targetShiftChip && draggedEntryId !== targetShiftChip.getAttribute('data-entry-id')) {
                 const rect = targetShiftChip.getBoundingClientRect();
@@ -2041,10 +2041,10 @@ async function drop(ev) {
             } else if (!targetShiftChip) {
                 dropzone.appendChild(draggedChip);
             }
-            
+
             const newOrderChips = Array.from(dropzone.querySelectorAll('.allocation-chip'));
             const entryIds = newOrderChips.map(c => c.getAttribute('data-entry-id'));
-            
+
             try {
                 await fetch('/api/roster/shift/reorder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entry_ids: entryIds }) });
             } catch (e) {
@@ -2053,14 +2053,14 @@ async function drop(ev) {
             loadRoster();
             return;
         }
-        
+
         if (newRole && dropDate) {
             const selectedDates = new Set();
             entryIdsToMove.forEach(id => {
                 const chip = document.querySelector(`[data-entry-id='${id}']`);
                 if (chip) {
                     const srcDropzone = chip.closest('.dropzone');
-                    if(srcDropzone) {
+                    if (srcDropzone) {
                         selectedDates.add(srcDropzone.getAttribute('data-date'));
                     }
                 }
@@ -2070,7 +2070,7 @@ async function drop(ev) {
             if (entryIdsToMove.length > 1) {
                 const confirmed = await confirmMultiSelection(entryIdsToMove, `move assignments to ${newRole}`);
                 if (!confirmed) {
-                    loadRoster(); 
+                    loadRoster();
                     return;
                 }
             }
@@ -2085,15 +2085,15 @@ async function drop(ev) {
 
                 const srcSignature = srcDropzone.getAttribute('data-task-signature');
                 const originalDate = srcDropzone.getAttribute('data-date');
-                
+
                 const dateForThisMove = isMultiDayDrag ? originalDate : dropDate;
 
                 const response = await fetch('/api/roster/shift/move', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        entry_id: id, 
-                        new_date: dateForThisMove, 
+                    body: JSON.stringify({
+                        entry_id: id,
+                        new_date: dateForThisMove,
                         new_shift_title: newRole,
                         source_task: srcSignature,
                         target_task: targetTaskSignature,
@@ -2106,7 +2106,7 @@ async function drop(ev) {
                     if (!firstError) firstError = await response.json();
                 }
             }
-            
+
             if (allOk) {
                 loadRoster();
             } else {
@@ -2118,7 +2118,7 @@ async function drop(ev) {
     } else if (data.type === 'daily_task' && tasksCell && !targetShiftChip && !emptyChip) {
         const draggedTaskId = data.task_id;
         const draggedChip = document.querySelector(`.task-chip[data-task-id='${draggedTaskId}']`);
-        
+
         // This block now only handles moving a task to a DIFFERENT day's task list. Reordering is done via RMC.
         if (draggedChip && !tasksCell.isSameNode(draggedChip.parentElement)) {
             const newDate = tasksCell.getAttribute('data-date');
@@ -2136,7 +2136,7 @@ async function drop(ev) {
         if (targetShiftChip) {
             const targetEntryId = targetShiftChip.getAttribute('data-entry-id');
             if (!targetEntryId) return;
-            
+
             const entryIds = getAffectedShifts(targetShiftChip);
             const validIds = entryIds.filter(id => !String(id).startsWith('empty|'));
             if (validIds.length === 0) return;
@@ -2173,7 +2173,7 @@ async function drop(ev) {
                         });
                     }
                 });
-                
+
                 const results = await Promise.all(promises);
                 const failed = results.filter(r => !r.ok);
                 if (failed.length === 0) {
@@ -2189,7 +2189,7 @@ async function drop(ev) {
             const targetDate = emptyChip.getAttribute('data-date');
             const targetRole = emptyChip.getAttribute('data-role');
             const targetEntryId = `empty|${targetDate}|${targetRole}`;
-            
+
             const entryIds = getAffectedShifts(emptyChip);
             const validEmptyIds = entryIds.filter(id => String(id).startsWith('empty|'));
             if (validEmptyIds.length === 0) return;
@@ -2200,10 +2200,10 @@ async function drop(ev) {
                     return fetch('/api/tasks/assign_missing', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
-                            task_id: data.task_id, 
-                            task_type: 'daily', 
-                            date: parts[1], 
+                        body: JSON.stringify({
+                            task_id: data.task_id,
+                            task_type: 'daily',
+                            date: parts[1],
                             shift_title: parts[2],
                             task_name: data.task_name,
                             duration: data.duration,
@@ -2229,10 +2229,10 @@ async function drop(ev) {
                         return fetch('/api/tasks/assign_missing', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ 
-                                task_id: data.shift_task_id, 
-                                task_type: 'assigned', 
-                                date: parts[1], 
+                            body: JSON.stringify({
+                                task_id: data.shift_task_id,
+                                task_type: 'assigned',
+                                date: parts[1],
                                 shift_title: parts[2],
                                 task_name: data.task_name,
                                 duration: data.duration,
@@ -2244,10 +2244,10 @@ async function drop(ev) {
                         return fetch('/api/tasks/assign_missing', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ 
-                                task_id: null, 
-                                task_type: 'daily', 
-                                date: parts[1], 
+                            body: JSON.stringify({
+                                task_id: null,
+                                task_type: 'daily',
+                                date: parts[1],
                                 shift_title: parts[2],
                                 task_name: data.task_name,
                                 duration: data.duration,
@@ -2257,7 +2257,7 @@ async function drop(ev) {
                         });
                     }
                 });
-                
+
                 const results = await Promise.all(promises);
                 const failed = results.filter(r => !r.ok);
                 if (failed.length === 0) {
@@ -2283,12 +2283,12 @@ async function updateStaffRole(name, newRole) {
 }
 
 async function editShiftTime(entryId, currentTime) {
-    if(!isAdmin) return;
+    if (!isAdmin) return;
     const entryIds = selectedShifts.has(String(entryId)) ? Array.from(selectedShifts) : [entryId];
-    const msg = entryIds.length > 1 
+    const msg = entryIds.length > 1
         ? `Enter shift time for ${entryIds.length} selected shifts (e.g. 09:00 - 17:00):`
         : "Enter shift time (e.g. 09:00 - 17:00):";
-        
+
     const newTime = await customPrompt(msg, currentTime);
     if (newTime !== null) {
         const promises = entryIds.map(id => fetch('/api/roster/shift/time', {
@@ -2312,13 +2312,13 @@ function renderPreviewControls() {
         banner = document.createElement('div');
         banner.id = 'previewBanner';
         banner.className = 'preview-banner';
-        
+
         const dashboard = document.getElementById('rotaDashboard');
         dashboard.parentNode.insertBefore(banner, dashboard);
     }
 
     const pendingCount = previewState.added.filter(a => a.previewStatus === 'pending').length +
-                         previewState.deleted.filter(d => d.previewStatus === 'pending').length;
+        previewState.deleted.filter(d => d.previewStatus === 'pending').length;
 
     banner.innerHTML = `
         <div>
@@ -2334,7 +2334,7 @@ function renderPreviewControls() {
 
 function checkPreviewFinished() {
     const pendingCount = previewState.added.filter(a => a.previewStatus === 'pending').length +
-                         previewState.deleted.filter(d => d.previewStatus === 'pending').length;
+        previewState.deleted.filter(d => d.previewStatus === 'pending').length;
     if (pendingCount === 0) {
         previewState.active = false;
         previewState.added = [];
@@ -2343,10 +2343,10 @@ function checkPreviewFinished() {
     }
 }
 
-window.previewAcceptAll = async function() {
+window.previewAcceptAll = async function () {
     const pendingAdds = previewState.added.filter(a => a.previewStatus === 'pending');
     const pendingDeletes = previewState.deleted.filter(d => d.previewStatus === 'pending');
-    
+
     if (pendingAdds.length === 0 && pendingDeletes.length === 0) return;
 
     try {
@@ -2370,7 +2370,7 @@ window.previewAcceptAll = async function() {
     }
 };
 
-window.previewDenyAll = function() {
+window.previewDenyAll = function () {
     previewState.added.forEach(a => { if (a.previewStatus === 'pending') a.previewStatus = 'denied'; });
     previewState.deleted.forEach(d => { if (d.previewStatus === 'pending') d.previewStatus = 'denied'; });
     checkPreviewFinished();
@@ -2378,7 +2378,7 @@ window.previewDenyAll = function() {
     loadRoster();
 };
 
-window.acceptPreview = async function(ev, type, id) {
+window.acceptPreview = async function (ev, type, id) {
     ev.stopPropagation();
     const item = type === 'add' ? previewState.added.find(a => a.previewId === id) : previewState.deleted.find(d => d.previewId === id);
     if (!item) return;
@@ -2386,14 +2386,14 @@ window.acceptPreview = async function(ev, type, id) {
     try {
         const added = type === 'add' ? [item] : [];
         const deleted = type === 'delete' ? [item] : [];
-        
+
         const response = await fetch('/api/upload/apply', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ mode: previewState.mode, added, deleted, rosterType: currentRoster })
         });
         const result = await response.json();
-        
+
         if (result.success) {
             item.previewStatus = 'accepted';
             checkPreviewFinished();
@@ -2407,7 +2407,7 @@ window.acceptPreview = async function(ev, type, id) {
     }
 };
 
-window.denyPreview = function(ev, type, id) {
+window.denyPreview = function (ev, type, id) {
     ev.stopPropagation();
     const item = type === 'add' ? previewState.added.find(a => a.previewId === id) : previewState.deleted.find(d => d.previewId === id);
     if (item) item.previewStatus = 'denied';
@@ -2416,7 +2416,7 @@ window.denyPreview = function(ev, type, id) {
     loadRoster();
 };
 
-window.cancelPreview = function() {
+window.cancelPreview = function () {
     previewState.active = false;
     previewState.added = [];
     previewState.deleted = [];
@@ -2431,7 +2431,7 @@ async function handleCmTaskEdit() {
         const taskType = cmTarget.taskChip.getAttribute('data-task-type');
         const currentName = cmTarget.taskChip.getAttribute('data-task-name');
         const groupId = cmTarget.taskChip.getAttribute('data-task-group-id');
-        
+
         const newName = await customPrompt('Edit task name:', currentName);
         if (newName && newName.trim() !== '' && newName !== currentName) {
             let mode = 'all';
@@ -2465,42 +2465,42 @@ let clipboardData = null;
 let cmTarget = null;
 
 document.addEventListener('contextmenu', (e) => {
-    if(!isAdmin) return;
+    if (!isAdmin) return;
     let shiftChip = e.target.closest('.allocation-chip');
     const taskChip = e.target.closest('.task-chip') || e.target.closest('.assigned-task-tag');
     const emptyChip = e.target.closest('.empty-chip');
     const dropzone = e.target.closest('.dropzone');
     const taskZone = e.target.closest('.tasks-cell');
-    
+
     if (taskChip) shiftChip = null; // Prioritize task if clicked inside shift chip
     if (emptyChip) shiftChip = null;
 
     if (shiftChip || taskChip || emptyChip || dropzone || taskZone) {
         e.preventDefault();
-        
+
         cmTarget = { shiftChip, taskChip, emptyChip, dropzone, taskZone };
-        
+
         const menu = document.getElementById('contextMenu');
         menu.style.display = 'block';
         menu.style.left = e.pageX + 'px';
         menu.style.top = e.pageY + 'px';
-        
+
         // Show/hide menu items based on target
         document.getElementById('cm-copy').style.display = (shiftChip || taskChip) ? 'block' : 'none';
-        
+
         let canPaste = false;
         if (clipboardData) {
             if (clipboardData.type === 'shift' && dropzone) canPaste = true;
             if (clipboardData.type === 'task' && taskZone) canPaste = true;
         }
         document.getElementById('cm-paste').style.display = canPaste ? 'block' : 'none';
-        
+
         const cmStatusItems = document.querySelectorAll('.cm-status');
         cmStatusItems.forEach(el => el.style.display = shiftChip ? 'block' : 'none');
-        
+
         const cmShiftItems = document.querySelectorAll('.cm-shift');
         cmShiftItems.forEach(el => el.style.display = shiftChip ? 'block' : 'none');
-        
+
         const isAssignedTask = taskChip && taskChip.classList.contains('assigned-task-tag');
         const cmTaskItems = document.querySelectorAll('.cm-task');
         cmTaskItems.forEach(el => {
@@ -2520,25 +2520,25 @@ document.addEventListener('contextmenu', (e) => {
                 el.style.display = 'block';
             }
         });
-        
+
         if (taskChip) {
             const groupId = taskChip.getAttribute('data-task-group-id');
             const hasGroup = groupId && groupId !== 'null' && groupId !== '';
             const unlinkEl = document.getElementById('cm-task-unlink');
             if (unlinkEl) unlinkEl.style.display = hasGroup ? 'block' : 'none';
         }
-        
+
         const cmEmptyItems = document.querySelectorAll('.cm-empty');
         cmEmptyItems.forEach(el => el.style.display = emptyChip ? 'block' : 'none');
-        
+
         const cmDropzoneItems = document.querySelectorAll('.cm-dropzone');
         cmDropzoneItems.forEach(el => el.style.display = (!shiftChip && !taskChip && !emptyChip && dropzone) ? 'block' : 'none');
-        
+
         if (emptyChip) {
             const isIgnored = emptyChip.classList.contains('ignored');
             document.getElementById('cm-empty-ignore').innerHTML = (isIgnored ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'Ignore';
         }
-        
+
         if (shiftChip) {
             const entryIds = getAffectedShifts(shiftChip);
             const validIds = entryIds.filter(id => !String(id).startsWith('empty|'));
@@ -2572,7 +2572,7 @@ document.addEventListener('contextmenu', (e) => {
                 const dailyTasks = document.querySelectorAll(`.tasks-cell[data-date="${date}"] .task-chip`);
                 const assignTaskMenu = document.getElementById('cm-shift-assign-task');
                 const assignTaskSubmenu = document.getElementById('cm-assign-task-submenu');
-                
+
                 if (dailyTasks.length > 0) {
                     assignTaskMenu.style.display = 'block';
                     assignTaskSubmenu.innerHTML = Array.from(dailyTasks).map(t => {
@@ -2594,7 +2594,7 @@ document.addEventListener('contextmenu', (e) => {
             document.getElementById('cm-task-am').innerHTML = (currentDuration === 'AM' ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'AM';
             document.getElementById('cm-task-pm').innerHTML = (currentDuration === 'PM' ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'PM';
             document.getElementById('cm-task-allday').innerHTML = (currentDuration === 'All Day' ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'All Day';
-            
+
             const currentColor = taskChip.getAttribute('data-task-color') || 'color-1';
             document.getElementById('cm-task-color1').innerHTML = (currentColor === 'color-1' ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'Orange';
             document.getElementById('cm-task-color2').innerHTML = (currentColor === 'color-2' ? '✓ ' : '&nbsp;&nbsp;&nbsp;') + 'Green';
@@ -2639,11 +2639,11 @@ async function handleCmLinkTask() {
 
 async function handleCmLinkAllTasks() {
     if (!isAdmin) return;
-    
+
     if (!await customConfirm(`Are you sure you want to link ALL tasks with the same name together for the ${currentRoster} roster? This means editing one instance will prompt to edit all.`)) {
         return;
     }
-    
+
     try {
         const response = await fetch('/api/tasks/link-all', {
             method: 'POST',
@@ -2690,21 +2690,21 @@ document.addEventListener('click', (e) => {
         menu.style.display = 'none';
     }
 
-        if (!isAdmin) {
-            if (!e.target.closest('.allocation-chip') && !e.target.closest('.task-chip') && !e.target.closest('.assigned-task-tag')) {
-                document.querySelectorAll('.locked-highlight').forEach(el => el.classList.remove('locked-highlight'));
-            }
-            return;
+    if (!isAdmin) {
+        if (!e.target.closest('.allocation-chip') && !e.target.closest('.task-chip') && !e.target.closest('.assigned-task-tag')) {
+            document.querySelectorAll('.locked-highlight').forEach(el => el.classList.remove('locked-highlight'));
         }
+        return;
+    }
 
     const shiftChip = e.target.closest('.allocation-chip');
     const emptyChip = e.target.closest('.empty-chip');
     const activeChip = shiftChip || emptyChip;
-    
+
     if (activeChip && e.shiftKey) {
         let entryId = activeChip.getAttribute('data-entry-id');
         if (emptyChip) entryId = `empty|${emptyChip.getAttribute('data-date')}|${emptyChip.getAttribute('data-role')}`;
-        
+
         if (selectedShifts.has(String(entryId))) {
             selectedShifts.delete(String(entryId));
             setSelectionVisuals(entryId, false);
@@ -2719,7 +2719,7 @@ document.addEventListener('click', (e) => {
         if (activeChip) {
             let entryId = activeChip.getAttribute('data-entry-id');
             if (emptyChip) entryId = `empty|${emptyChip.getAttribute('data-date')}|${emptyChip.getAttribute('data-role')}`;
-            
+
             if (selectedShifts.has(String(entryId))) {
                 if (!e.target.closest('button') && !e.target.closest('.assigned-task-tag')) {
                     clearSelection();
@@ -2742,7 +2742,7 @@ document.addEventListener('click', (e) => {
 document.addEventListener('dblclick', (e) => {
     const taskChip = e.target.closest('.task-chip, .assigned-task-tag');
     const shiftChip = e.target.closest('.allocation-chip');
-    
+
     if (!isAdmin) {
         if (taskChip) {
             const groupId = taskChip.getAttribute('data-task-group-id');
@@ -2755,7 +2755,7 @@ document.addEventListener('dblclick', (e) => {
             window.getSelection().removeAllRanges();
             return;
         }
-        
+
         if (shiftChip) {
             const staffName = shiftChip.getAttribute('data-staff-name');
             if (staffName) {
@@ -2785,7 +2785,7 @@ document.addEventListener('dblclick', (e) => {
             window.getSelection().removeAllRanges();
             return;
         }
-        
+
         if (taskChip) {
             const taskName = taskChip.getAttribute('data-task-name');
             if (taskName) {
@@ -2809,8 +2809,8 @@ function handleCmCopy() {
     if (cmTarget.shiftChip) {
         clipboardData = { type: 'shift', entry_id: cmTarget.shiftChip.getAttribute('data-entry-id') };
     } else if (cmTarget.taskChip) {
-        clipboardData = { 
-            type: 'task', 
+        clipboardData = {
+            type: 'task',
             task_name: cmTarget.taskChip.getAttribute('data-task-name'),
             duration: cmTarget.taskChip.getAttribute('data-task-duration') || 'All Day',
             color: cmTarget.taskChip.getAttribute('data-task-color') || 'color-1',
@@ -2834,7 +2834,7 @@ async function handleCmAddMissing() {
 
 async function removeMissingAssignment(ev, date, role) {
     ev.stopPropagation();
-    if(!isAdmin) return;
+    if (!isAdmin) return;
     const chip = ev.target.closest('.empty-chip');
     const entryIds = getAffectedShifts(chip);
     const promises = entryIds.map(id => {
@@ -2852,11 +2852,11 @@ async function removeMissingAssignment(ev, date, role) {
 
 async function handleCmPaste() {
     if (!clipboardData) return;
-    
+
     if (clipboardData.type === 'shift' && cmTarget.dropzone) {
         const newDate = cmTarget.dropzone.getAttribute('data-date');
         const newRole = cmTarget.dropzone.getAttribute('data-role');
-        
+
         const response = await fetch('/api/roster/shift/duplicate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2885,12 +2885,12 @@ async function handleCmStatusToggle(statusClicked) {
     if (cmTarget.shiftChip) {
         const validIds = getAffectedShifts(cmTarget.shiftChip).filter(id => !String(id).startsWith('empty|'));
         if (validIds.length === 0) return;
-        
+
         if (validIds.length > 1) {
             const confirmed = await confirmMultiSelection(validIds, `toggle status to ${statusClicked}`);
             if (!confirmed) return;
         }
-        
+
         const selectedElements = validIds.map(id => document.querySelector(`[data-entry-id='${id}']`)).filter(Boolean);
         const allHaveStatus = selectedElements.every(el => el.getAttribute('data-status') === statusClicked);
 
@@ -2928,10 +2928,10 @@ async function handleCmNote() {
     const firstNote = allNotes[0] || '';
     const allSameNote = allNotes.every(note => note === firstNote);
 
-    const msg = entryIds.length > 1 
+    const msg = entryIds.length > 1
         ? `Enter note for ${entryIds.length} selected shifts (leave blank to delete):`
         : "Enter note (leave blank to delete):";
-        
+
     const defaultNote = (entryIds.length > 1 && !allSameNote) ? '' : firstNote;
 
     const newNote = await customPrompt(msg, defaultNote);
@@ -2998,7 +2998,7 @@ async function handleCmAssign(staffName) {
         });
         const results = await Promise.all(promises.filter(Boolean));
         const failed = results.filter(r => !r.ok);
-        
+
         if (failed.length === 0) {
             clearSelection();
             loadRoster();
@@ -3020,7 +3020,7 @@ async function handleCmSwap(staffName) {
         }));
         const results = await Promise.all(promises);
         const failed = results.filter(r => !r.ok);
-        
+
         if (failed.length === 0) {
             clearSelection();
             loadRoster();
@@ -3037,19 +3037,19 @@ async function handleCmAssignTask(taskName, duration, color, groupId) {
         const entryIds = getAffectedShifts(cmTarget.shiftChip);
         const validIds = entryIds.filter(id => !String(id).startsWith('empty|'));
         if (validIds.length === 0) return;
-        
+
         if (validIds.length > 1) {
             const confirmed = await confirmMultiSelection(validIds, `assign task '${taskName}'`);
             if (!confirmed) return;
         }
-        
+
         const promises = validIds.map(id => fetch('/api/roster/shift/task', {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entry_id: id, task_name: taskName, duration: duration, color: color, group_id: groupId || null })
         }));
-        
+
         const results = await Promise.all(promises);
         const failed = results.filter(r => !r.ok);
-        
+
         if (failed.length === 0) {
             clearSelection();
             loadRoster();
@@ -3084,7 +3084,7 @@ async function handleCmTaskColor(color) {
         const taskId = cmTarget.taskChip.getAttribute('data-task-id');
         const taskType = cmTarget.taskChip.getAttribute('data-task-type');
         const groupId = cmTarget.taskChip.getAttribute('data-task-group-id');
-        
+
         let mode = 'all';
         if (taskType === 'assigned') {
             mode = 'single';
@@ -3101,7 +3101,7 @@ async function handleCmTaskColor(color) {
             if (!choice) return;
             mode = choice;
         }
-        
+
         const endpoint = taskType === 'daily' ? '/api/tasks/color' : '/api/roster/shift/task/color';
         const body = taskType === 'daily' ? { task_id: taskId, color, mode } : { shift_task_id: taskId, color, mode };
 
@@ -3119,7 +3119,7 @@ async function handleCmTaskDuration(duration) {
         const taskId = cmTarget.taskChip.getAttribute('data-task-id');
         const taskType = cmTarget.taskChip.getAttribute('data-task-type');
         const groupId = cmTarget.taskChip.getAttribute('data-task-group-id');
-        
+
         let mode = 'all';
         if (taskType === 'assigned') {
             mode = 'single';
@@ -3136,7 +3136,7 @@ async function handleCmTaskDuration(duration) {
             if (!choice) return;
             mode = choice;
         }
-        
+
         const endpoint = taskType === 'daily' ? '/api/tasks/duration' : '/api/roster/shift/task/duration';
         const body = taskType === 'daily' ? { task_id: taskId, duration, mode } : { shift_task_id: taskId, duration, mode };
 
@@ -3154,7 +3154,7 @@ async function handleCmTaskMove(direction) {
         const taskId = cmTarget.taskChip.getAttribute('data-task-id');
         const taskType = cmTarget.taskChip.getAttribute('data-task-type');
         const groupId = cmTarget.taskChip.getAttribute('data-task-group-id');
-        
+
         let mode = 'single';
         if (taskType === 'daily' && groupId && groupId !== 'null' && groupId !== '') {
             const choice = await showModal({
@@ -3169,7 +3169,7 @@ async function handleCmTaskMove(direction) {
             if (!choice) return;
             mode = choice;
         }
-        
+
         try {
             const response = await fetch('/api/tasks/move-vertical', {
                 method: 'POST',
@@ -3195,7 +3195,7 @@ document.addEventListener('mouseover', (e) => {
             });
         }
     }
-    
+
     const staffNameEl = e.target.closest('.staff-name');
     if (staffNameEl) {
         const allocChip = staffNameEl.closest('.allocation-chip');
@@ -3221,7 +3221,7 @@ document.addEventListener('mouseout', (e) => {
             });
         }
     }
-    
+
     const staffNameEl = e.target.closest('.staff-name');
     if (staffNameEl) {
         const allocChip = staffNameEl.closest('.allocation-chip');

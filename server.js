@@ -34,7 +34,8 @@ app.use((req, res, next) => {
 });
 
 const upload = multer({ dest: 'uploads/' });
-let db = new Database('database.db');
+const dbPath = path.join(__dirname, 'database.db');
+let db = new Database(dbPath);
 
 app.use(express.json());
 app.use(express.static('public'));
@@ -84,7 +85,9 @@ db.exec(`
     color TEXT DEFAULT 'color-1',
     shift_title TEXT,
     group_id TEXT,
-    roster_type TEXT DEFAULT 'QA'
+    roster_type TEXT DEFAULT 'QA',
+    abbreviation TEXT DEFAULT NULL,
+    category TEXT DEFAULT NULL
   );
 
   CREATE TABLE IF NOT EXISTS shift_tasks (
@@ -113,7 +116,27 @@ db.exec(`
     is_published INTEGER DEFAULT 0,
     PRIMARY KEY(week_commencing, roster_type)
   );
+
+  CREATE TABLE IF NOT EXISTS task_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_name TEXT NOT NULL,
+    duration INTEGER DEFAULT 1,
+    color TEXT DEFAULT 'color-1',
+    roster_type TEXT DEFAULT 'QA',
+    target_interval INTEGER DEFAULT NULL,
+    abbreviation TEXT DEFAULT NULL,
+    category TEXT DEFAULT NULL,
+    linked_tasks TEXT DEFAULT NULL,
+    UNIQUE(task_name, roster_type)
+  );
 `);
+
+try { db.exec("ALTER TABLE task_templates ADD COLUMN target_interval INTEGER DEFAULT NULL"); } catch(e) {}
+try { db.exec("ALTER TABLE task_templates ADD COLUMN abbreviation TEXT DEFAULT NULL"); } catch(e) {}
+try { db.exec("ALTER TABLE daily_tasks ADD COLUMN abbreviation TEXT DEFAULT NULL"); } catch(e) {}
+try { db.exec("ALTER TABLE task_templates ADD COLUMN category TEXT DEFAULT NULL"); } catch(e) {}
+try { db.exec("ALTER TABLE daily_tasks ADD COLUMN category TEXT DEFAULT NULL"); } catch(e) {}
+try { db.exec("ALTER TABLE task_templates ADD COLUMN linked_tasks TEXT DEFAULT NULL"); } catch(e) {}
 
 // --- AUTOMATIC SCHEMA MIGRATION ---
 try {
@@ -224,6 +247,63 @@ try {
 }
 
 initDatabase();
+
+// --- RE-GROUP/UNIFY DAILY TASKS TO PREVENT CROSS-DATE GROUP_ID LINKING ---
+try {
+    const allDailyTasks = db.prepare('SELECT * FROM daily_tasks ORDER BY task_name ASC, roster_type ASC, date ASC').all();
+    if (allDailyTasks.length > 0) {
+        const runs = [];
+        let currentRun = [];
+        
+        allDailyTasks.forEach(task => {
+            if (currentRun.length === 0) {
+                currentRun.push(task);
+            } else {
+                const last = currentRun[currentRun.length - 1];
+                const prevDate = new Date(last.date + 'T12:00:00Z');
+                const currDate = new Date(task.date + 'T12:00:00Z');
+                const diffDays = Math.round((currDate - prevDate) / (1000 * 60 * 60 * 24));
+                
+                let isConsecutive = false;
+                if (last.task_name === task.task_name && last.roster_type === task.roster_type) {
+                    if (diffDays === 1) {
+                        isConsecutive = true;
+                    } else if (diffDays <= 3) {
+                        const prevDayOfWeek = prevDate.getUTCDay();
+                        if (prevDayOfWeek === 5 && diffDays <= 3) {
+                            isConsecutive = true;
+                        } else if (prevDayOfWeek === 6 && diffDays <= 2) {
+                            isConsecutive = true;
+                        }
+                    }
+                }
+                
+                if (isConsecutive) {
+                    currentRun.push(task);
+                } else {
+                    runs.push(currentRun);
+                    currentRun = [task];
+                }
+            }
+        });
+        if (currentRun.length > 0) {
+            runs.push(currentRun);
+        }
+        
+        db.transaction(() => {
+            const updateGroupId = db.prepare('UPDATE daily_tasks SET group_id = ? WHERE id = ?');
+            runs.forEach(run => {
+                const newGroupId = 'run_' + Date.now().toString() + '_' + Math.random().toString(36).substring(2, 7);
+                run.forEach(t => {
+                    updateGroupId.run(newGroupId, t.id);
+                });
+            });
+        })();
+        console.log(`--> Database migration: Re-grouped ${runs.length} unique task runs.`);
+    }
+} catch (err) {
+    console.error("Database migration grouping error:", err);
+}
 
 // Safe Date parsing supporting serials, slash, and dash notation
 function parseExcelDate(cellValue) {
@@ -848,7 +928,7 @@ app.get('/api/database/export', (req, res) => {
     }
     const tempFile = `database_export_${Date.now()}.db`;
     try {
-        fs.copyFileSync('database.db', tempFile);
+        fs.copyFileSync(dbPath, tempFile);
         const tempDb = new Database(tempFile);
         tempDb.prepare('DELETE FROM roster_entries WHERE roster_type != ? AND roster_type != \'Universal\'').run(rosterType);
         tempDb.prepare('DELETE FROM daily_tasks WHERE roster_type != ? AND roster_type != \'Universal\'').run(rosterType);
@@ -876,7 +956,7 @@ app.get('/api/database/export/tasks', (req, res) => {
     
     const tempFile = `database_tasks_${Date.now()}.db`;
     try {
-        fs.copyFileSync('database.db', tempFile);
+        fs.copyFileSync(dbPath, tempFile);
         const tempDb = new Database(tempFile);
         
         const { startDate, endDate, rosterType = 'QA' } = req.query;
@@ -976,6 +1056,24 @@ app.post('/api/database/import', upload.single('database'), (req, res) => {
         } catch(e) {}
         
         db.transaction(() => {
+            // Import task templates if table exists in uploaded database
+            try {
+                const hasTemplatesTable = uploadedDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='task_templates'").get();
+                if (hasTemplatesTable) {
+                    db.prepare('DELETE FROM task_templates').run();
+                    const importTemplates = uploadedDb.prepare('SELECT * FROM task_templates').all();
+                    try {
+                        uploadedDb.exec("ALTER TABLE task_templates ADD COLUMN linked_tasks TEXT DEFAULT NULL");
+                    } catch(e) {}
+                    const insertTemplate = db.prepare('INSERT INTO task_templates (task_name, duration, color, roster_type, target_interval, abbreviation, category, linked_tasks) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                    for (const t of importTemplates) {
+                        insertTemplate.run(t.task_name, t.duration, t.color, t.roster_type, t.target_interval, t.abbreviation, t.category, t.linked_tasks || null);
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to import task templates:", err);
+            }
+
             db.prepare('DELETE FROM shift_tasks WHERE entry_id IN (SELECT id FROM roster_entries WHERE roster_type IN (?, \'Universal\'))').run(rosterType);
             db.prepare('DELETE FROM roster_entries WHERE roster_type IN (?, \'Universal\')').run(rosterType);
             db.prepare('DELETE FROM daily_tasks WHERE roster_type IN (?, \'Universal\')').run(rosterType);
@@ -1367,17 +1465,83 @@ app.post('/api/roster/auto-group-tasks', (req, res) => {
 // --- API: DAILY TASKS ---
 app.get('/api/tasks', (req, res) => {
     const { startDate, endDate, rosterType = 'QA' } = req.query;
-    const tasks = db.prepare(`SELECT * FROM daily_tasks WHERE roster_type IN (?, 'Universal') AND date BETWEEN ? AND ? ORDER BY date ASC, display_order ASC, id ASC`).all(rosterType, startDate, endDate);
-    res.json(tasks);
+    try {
+        const tasks = db.prepare(`
+            SELECT dt.*, 
+                   (SELECT COUNT(*) 
+                    FROM shift_tasks st 
+                    JOIN roster_entries re ON st.entry_id = re.id 
+                    WHERE st.task_name = dt.task_name 
+                      AND re.date = dt.date 
+                      AND re.roster_type IN (dt.roster_type, 'Universal', ?)
+                   ) > 0 AS has_staff
+            FROM daily_tasks dt
+            WHERE dt.roster_type IN (?, 'Universal') AND dt.date BETWEEN ? AND ? 
+            ORDER BY dt.date ASC, dt.display_order ASC, dt.id ASC
+        `).all(rosterType, rosterType, startDate, endDate);
+        res.json(tasks);
+    } catch (err) {
+        console.error("GET tasks error:", err);
+        res.status(500).json({ error: 'Failed to fetch tasks.' });
+    }
 });
 
 app.post('/api/tasks', (req, res) => {
-    const { date, task_name, duration = 'All Day', color = 'color-1', group_id = null, rosterType = 'QA' } = req.body;
+    const { date, task_name, duration = 'All Day', color = 'color-1', group_id = null, rosterType = 'QA', abbreviation = null, category = null } = req.body;
     try {
-        db.prepare('INSERT INTO daily_tasks (date, task_name, duration, color, group_id, roster_type) VALUES (?, ?, ?, ?, ?, ?)').run(date, task_name, duration, color, group_id, rosterType);
+        const maxOrderRow = db.prepare("SELECT MAX(display_order) as maxOrder FROM daily_tasks WHERE date = ? AND roster_type IN (?, 'Universal') AND shift_title IS NULL").get(date, rosterType);
+        const nextOrder = (maxOrderRow && maxOrderRow.maxOrder !== null) ? maxOrderRow.maxOrder + 1 : 0;
+        
+        db.prepare('INSERT INTO daily_tasks (date, task_name, duration, color, group_id, roster_type, display_order, abbreviation, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(date, task_name, duration, color, group_id, rosterType, nextOrder, abbreviation, category);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'Failed to add task.' });
+    }
+});
+
+// --- API: TASK TEMPLATES ---
+app.get('/api/templates', (req, res) => {
+    const { rosterType = 'QA' } = req.query;
+    try {
+        const templates = db.prepare('SELECT * FROM task_templates WHERE roster_type = ? ORDER BY task_name ASC').all(rosterType);
+        res.json(templates);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch templates.' });
+    }
+});
+
+app.post('/api/templates', (req, res) => {
+    const { task_name, duration = 1, color = 'color-1', rosterType = 'QA', target_interval = null, abbreviation = null, category = null, linked_tasks = null, applyToExisting = false } = req.body;
+    try {
+        db.transaction(() => {
+            db.prepare(`
+                INSERT INTO task_templates (task_name, duration, color, roster_type, target_interval, abbreviation, category, linked_tasks) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(task_name, roster_type) 
+                DO UPDATE SET duration=excluded.duration, color=excluded.color, target_interval=excluded.target_interval, abbreviation=excluded.abbreviation, category=excluded.category, linked_tasks=excluded.linked_tasks
+            `).run(task_name, duration, color, rosterType, target_interval, abbreviation, category, linked_tasks);
+            
+            if (applyToExisting) {
+                db.prepare(`
+                    UPDATE daily_tasks 
+                    SET color = ?, abbreviation = ?, category = ? 
+                    WHERE task_name = ? AND roster_type = ?
+                `).run(color, abbreviation, category, task_name, rosterType);
+            }
+        })();
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to save template.' });
+    }
+});
+
+app.delete('/api/templates/:id', (req, res) => {
+    const { id } = req.params;
+    try {
+        db.prepare('DELETE FROM task_templates WHERE id = ?').run(id);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to delete template.' });
     }
 });
 
@@ -1498,6 +1662,92 @@ app.post('/api/tasks/move-vertical', (req, res) => {
     }
 });
 
+app.post('/api/tasks/check-assignments', (req, res) => {
+    const { task_id, mode } = req.body;
+    try {
+        const task = db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(task_id);
+        if (!task) return res.json({ assignments: [] });
+        
+        let targetTasks = [];
+        if (mode === 'all' && task.group_id) {
+            targetTasks = db.prepare('SELECT * FROM daily_tasks WHERE group_id = ?').all(task.group_id);
+        } else {
+            targetTasks = [task];
+        }
+        
+        const assignments = [];
+        const checkQuery = db.prepare(`
+            SELECT s.name 
+            FROM shift_tasks st 
+            JOIN roster_entries re ON st.entry_id = re.id 
+            JOIN staff s ON re.staff_id = s.id 
+            WHERE st.task_name = ? AND re.date = ? AND re.roster_type = ?
+        `);
+        
+        targetTasks.forEach(t => {
+            const rows = checkQuery.all(t.task_name, t.date, t.roster_type || 'QA');
+            if (rows.length > 0) {
+                assignments.push({
+                    date: t.date,
+                    task_name: t.task_name,
+                    staff: rows.map(r => r.name)
+                });
+            }
+        });
+        
+        res.json({ assignments });
+    } catch (err) {
+        console.error("Check assignments error:", err);
+        res.status(500).json({ error: 'Failed to check staff assignments.' });
+    }
+});
+
+app.post('/api/tasks/move-annual', (req, res) => {
+    const { task_id, new_date } = req.body;
+    try {
+        const task = db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(task_id);
+        if (!task) return res.status(404).json({ error: 'Task not found.' });
+
+        db.transaction(() => {
+            const deleteShiftTask = db.prepare(`
+                DELETE FROM shift_tasks 
+                WHERE task_name = ? AND entry_id IN (
+                    SELECT id FROM roster_entries WHERE date = ? AND roster_type = ?
+                )
+            `);
+
+            if (task.group_id) {
+                const groupTasks = db.prepare('SELECT * FROM daily_tasks WHERE group_id = ? ORDER BY date ASC').all(task.group_id);
+                if (groupTasks.length > 0) {
+                    const oldStartDate = groupTasks[0].date;
+                    const dateDiff = Math.round((new Date(new_date) - new Date(oldStartDate)) / (1000 * 60 * 60 * 24));
+                    
+                    const updateDate = db.prepare('UPDATE daily_tasks SET date = ? WHERE id = ?');
+                    groupTasks.forEach(t => {
+                        // Clear staff allocations on the original date
+                        deleteShiftTask.run(t.task_name, t.date, t.roster_type || 'QA');
+
+                        const originalDate = new Date(t.date);
+                        originalDate.setDate(originalDate.getDate() + dateDiff);
+                        const mm = String(originalDate.getMonth() + 1).padStart(2, '0');
+                        const dd = String(originalDate.getDate()).padStart(2, '0');
+                        const newDateStr = `${originalDate.getFullYear()}-${mm}-${dd}`;
+                        updateDate.run(newDateStr, t.id);
+                    });
+                }
+            } else {
+                // Clear staff allocations on the original date
+                deleteShiftTask.run(task.task_name, task.date, task.roster_type || 'QA');
+                db.prepare('UPDATE daily_tasks SET date = ? WHERE id = ?').run(new_date, task_id);
+            }
+        })();
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Task move annual error:", err);
+        res.status(500).json({ error: 'Failed to move task.' });
+    }
+});
+
 app.post('/api/tasks/edit', (req, res) => {
     const { task_id, task_type, new_task_name, mode = 'all' } = req.body;
     try {
@@ -1526,6 +1776,52 @@ app.post('/api/tasks/edit', (req, res) => {
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'Failed to edit task.' });
+    }
+});
+
+app.post('/api/tasks/edit-event', (req, res) => {
+    const { task_id, task_name, color, category, abbreviation } = req.body;
+    try {
+        const task = db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(task_id);
+        if (!task) return res.status(404).json({ error: 'Task not found.' });
+
+        db.transaction(() => {
+            if (task.group_id) {
+                // Get all tasks in the group to update their shift_tasks too
+                const groupTasks = db.prepare('SELECT * FROM daily_tasks WHERE group_id = ?').all(task.group_id);
+                
+                // Update each daily task and its corresponding shift tasks
+                const updateDaily = db.prepare('UPDATE daily_tasks SET task_name = ?, color = ?, category = ?, abbreviation = ? WHERE id = ?');
+                const updateShift = db.prepare(`
+                    UPDATE shift_tasks 
+                    SET task_name = ?, color = ? 
+                    WHERE task_name = ? AND entry_id IN (
+                        SELECT id FROM roster_entries WHERE date = ? AND roster_type = ?
+                    )
+                `);
+
+                groupTasks.forEach(gt => {
+                    updateShift.run(task_name, color, gt.task_name, gt.date, gt.roster_type || 'QA');
+                    updateDaily.run(task_name, color, category, abbreviation, gt.id);
+                });
+            } else {
+                // Update single task
+                db.prepare(`
+                    UPDATE shift_tasks 
+                    SET task_name = ?, color = ? 
+                    WHERE task_name = ? AND entry_id IN (
+                        SELECT id FROM roster_entries WHERE date = ? AND roster_type = ?
+                    )
+                `).run(task_name, color, task.task_name, task.date, task.roster_type || 'QA');
+
+                db.prepare('UPDATE daily_tasks SET task_name = ?, color = ?, category = ?, abbreviation = ? WHERE id = ?')
+                  .run(task_name, color, category, abbreviation, task_id);
+            }
+        })();
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Edit event error:", err);
+        res.status(500).json({ error: 'Failed to edit event.' });
     }
 });
 
@@ -1744,22 +2040,33 @@ app.delete('/api/tasks/:id', (req, res) => {
         const mode = req.query.mode || 'all';
         const task = db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(req.params.id);
         if (task) {
-            if (task.group_id && mode === 'all') {
-                db.prepare('DELETE FROM shift_tasks WHERE group_id = ?').run(task.group_id);
-                db.prepare('DELETE FROM daily_tasks WHERE group_id = ?').run(task.group_id);
-            } else {
-                // Only cascade delete to all users and missing assignments if it's a top-level Daily Task
-                if (!task.shift_title) {
-                    db.prepare(`
-                        DELETE FROM shift_tasks 
-                        WHERE task_name = ? AND entry_id IN (
-                            SELECT id FROM roster_entries WHERE date = ? AND roster_type = ?
-                        )
-                    `).run(task.task_name, task.date, task.roster_type || 'QA');
-                    db.prepare('DELETE FROM daily_tasks WHERE task_name = ? AND date = ? AND id != ? AND roster_type = ?').run(task.task_name, task.date, task.id, task.roster_type || 'QA');
+            db.transaction(() => {
+                const deleteShiftTask = db.prepare(`
+                    DELETE FROM shift_tasks 
+                    WHERE task_name = ? AND entry_id IN (
+                        SELECT id FROM roster_entries WHERE date = ? AND roster_type = ?
+                    )
+                `);
+
+                if (task.group_id && mode === 'all') {
+                    const groupTasks = db.prepare('SELECT date, task_name, roster_type FROM daily_tasks WHERE group_id = ?').all(task.group_id);
+                    groupTasks.forEach(gt => {
+                        deleteShiftTask.run(gt.task_name, gt.date, gt.roster_type || 'QA');
+                    });
+                    db.prepare('DELETE FROM daily_tasks WHERE group_id = ?').run(task.group_id);
+                } else if (mode === 'single_strict') {
+                    deleteShiftTask.run(task.task_name, task.date, task.roster_type || 'QA');
+                    db.prepare('DELETE FROM daily_tasks WHERE id = ?').run(req.params.id);
+                } else {
+                    // Only cascade delete to all users and missing assignments if it's a top-level Daily Task
+                    if (!task.shift_title) {
+                        deleteShiftTask.run(task.task_name, task.date, task.roster_type || 'QA');
+                        db.prepare('DELETE FROM daily_tasks WHERE task_name = ? AND date = ? AND id != ? AND roster_type = ?').run(task.task_name, task.date, task.id, task.roster_type || 'QA');
+                    }
+                    deleteShiftTask.run(task.task_name, task.date, task.roster_type || 'QA');
+                    db.prepare('DELETE FROM daily_tasks WHERE id = ?').run(req.params.id);
                 }
-                db.prepare('DELETE FROM daily_tasks WHERE id = ?').run(req.params.id);
-            }
+            })();
         }
         res.json({ success: true });
     } catch (err) {
@@ -2121,7 +2428,7 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'An unexpected server error occurred.' });
 });
 
-const PORT = process.env.PORT || 3002;
+const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
     console.log(`QA Roster Server running on port ${PORT}`);
 });

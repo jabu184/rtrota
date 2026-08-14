@@ -1,0 +1,3104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Annual Task Scheduler & Overview</title>
+    <style>
+        :root {
+            --bg-color: #1a202c;
+            --container-bg: #2d3748;
+            --border-color: #4a5568;
+            --text-main: #e2e8f0;
+            --text-muted: #a0aec0;
+            --accent-primary: #805ad5;
+            --accent-secondary: #3182ce;
+            --accent-hover: #2b6cb0;
+            --danger-color: #e53e3e;
+            --success-color: #38a169;
+            --card-bg: #1a202c;
+            --grid-day-bg: #2d3748;
+            --grid-day-hover: #4a5568;
+        }
+
+        body.light-theme {
+            --bg-color: #e2e8f0;
+            --container-bg: #edf2f7;
+            --border-color: #cbd5e0;
+            --text-main: #2d3748;
+            --text-muted: #718096;
+            --accent-primary: #805ad5;
+            --accent-secondary: #3182ce;
+            --accent-hover: #2b6cb0;
+            --danger-color: #e53e3e;
+            --success-color: #38a169;
+            --card-bg: #ffffff;
+            --grid-day-bg: #f7fafc;
+            --grid-day-hover: #edf2f7;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-main);
+            margin: 20px;
+            transition: background 0.3s, color 0.3s;
+        }
+
+        .container {
+            max-width: 1440px;
+            margin: 0 auto;
+            background: var(--container-bg);
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            transition: background 0.3s;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 15px;
+        }
+
+        .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        h1 {
+            color: var(--accent-secondary);
+            margin: 0;
+            font-size: 24px;
+        }
+
+        .nav-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+            font-size: 14px;
+            font-weight: bold;
+            background: var(--accent-secondary);
+            color: #fff;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+
+        button:hover {
+            background: var(--accent-hover);
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .btn-secondary {
+            background: var(--border-color);
+        }
+        .btn-secondary:hover {
+            background: var(--grid-day-hover);
+        }
+
+        .btn-danger {
+            background: var(--danger-color);
+        }
+        .btn-danger:hover {
+            background: #c53030;
+        }
+
+        .btn-success {
+            background: var(--success-color);
+        }
+        .btn-success:hover {
+            background: #2f855a;
+        }
+
+        .control-panel {
+            background: var(--card-bg);
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 25px;
+            border: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .roster-toggle-group {
+            display: flex;
+            background: var(--border-color);
+            border-radius: 6px;
+            padding: 2px;
+        }
+
+        .roster-toggle-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            padding: 6px 12px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .roster-toggle-btn.active {
+            background: var(--accent-secondary);
+            color: #fff;
+        }
+
+        .roster-toggle-btn:not(.active):hover {
+            background: rgba(255,255,255,0.1);
+        }
+
+        .selectors {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        select, input {
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+            background: var(--container-bg);
+            color: var(--text-main);
+            font-size: 14px;
+        }
+
+        .main-layout {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 25px;
+        }
+
+        /* Sidebar Panels */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .panel {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 15px;
+        }
+
+        .panel h2 {
+            font-size: 16px;
+            margin-top: 0;
+            margin-bottom: 12px;
+            color: var(--accent-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* Filters List */
+        .task-list-filter {
+            max-height: 250px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding-right: 5px;
+        }
+
+        .filter-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 13px;
+            padding: 6px 8px;
+            border-radius: 4px;
+            background: var(--container-bg);
+            border: 1px solid var(--border-color);
+        }
+
+        .filter-item-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-grow: 1;
+        }
+
+        .filter-count {
+            background: var(--border-color);
+            border-radius: 10px;
+            padding: 1px 6px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+
+        .tracker-btn {
+            font-size: 10px;
+            padding: 2px 6px;
+            background: var(--accent-primary);
+            border: none;
+            border-radius: 3px;
+            color: white;
+            cursor: pointer;
+        }
+        .tracker-btn.active {
+            background: var(--success-color);
+            box-shadow: 0 0 5px var(--success-color);
+        }
+
+        /* Templates Manager */
+        .template-list {
+            max-height: 440px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .template-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            border: 1px dashed var(--border-color);
+            border-radius: 4px;
+            background: var(--container-bg);
+            font-size: 13px;
+            cursor: grab;
+            transition: border-color 0.15s, background 0.15s;
+        }
+
+        .template-card:hover {
+            background: var(--grid-day-hover);
+            border-color: var(--accent-secondary);
+        }
+
+        .template-card:active {
+            cursor: grabbing;
+        }
+
+        .template-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .template-name {
+            font-weight: bold;
+        }
+
+        .template-meta {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .template-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            border-top: 1px dashed var(--border-color);
+            padding-top: 12px;
+            margin-top: 5px;
+        }
+
+        .form-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .form-row label {
+            font-size: 11px;
+            font-weight: bold;
+            color: var(--text-muted);
+        }
+
+        .color-selector {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 6px;
+            margin-top: 4px;
+        }
+
+        .color-dot {
+            height: 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: border 0.1s;
+        }
+
+        .color-dot.selected {
+            border-color: #fff;
+            box-shadow: 0 0 4px rgba(255,255,255,0.6);
+        }
+
+        /* Colors mapping (matches index.html styles) */
+        .color-1 { background: #744210 !important; border-color: #b7791f !important; color: #fff; }
+        .color-2 { background: #22543d !important; border-color: #38a169 !important; color: #fff; }
+        .color-3 { background: #44337a !important; border-color: #805ad5 !important; color: #fff; }
+        .color-4 { background: #2a4365 !important; border-color: #3182ce !important; color: #fff; }
+        .color-5 { background: #742a2a !important; border-color: #e53e3e !important; color: #fff; }
+        .color-6 { background: #234e52 !important; border-color: #319795 !important; color: #fff; }
+        .color-7 { background: #702459 !important; border-color: #b83280 !important; color: #fff; }
+        .color-8 { background: #975a16 !important; border-color: #d69e2e !important; color: #fff; }
+        .color-9 { background: #086f83 !important; border-color: #38b2ac !important; color: #fff; }
+        .color-10 { background: #4a5568 !important; border-color: #718096 !important; color: #fff; }
+        .color-11 { background: #4d7c0f !important; border-color: #65a30d !important; color: #fff; }
+
+        .light-theme .color-1 { background: #fffff0 !important; border-color: #f6e05e !important; color: #2d3748; }
+        .light-theme .color-2 { background: #f0fff4 !important; border-color: #68d391 !important; color: #2d3748; }
+        .light-theme .color-3 { background: #faf5ff !important; border-color: #d6bcfa !important; color: #2d3748; }
+        .light-theme .color-4 { background: #ebf8ff !important; border-color: #90cdf4 !important; color: #2d3748; }
+        .light-theme .color-5 { background: #fff5f5 !important; border-color: #feb2b2 !important; color: #2d3748; }
+        .light-theme .color-6 { background: #e6fffa !important; border-color: #81e6d9 !important; color: #2d3748; }
+        .light-theme .color-7 { background: #fff5f7 !important; border-color: #fbb6ce !important; color: #2d3748; }
+        .light-theme .color-8 { background: #fffaf0 !important; border-color: #f6e05e !important; color: #2d3748; }
+        .light-theme .color-9 { background: #e6fffa !important; border-color: #4fd1c5 !important; color: #2d3748; }
+        .light-theme .color-10 { background: #f7fafc !important; border-color: #e2e8f0 !important; color: #2d3748; }
+        .light-theme .color-11 { background: #f7fee7 !important; border-color: #bef264 !important; color: #2d3748; }
+
+        /* Calendar Grid */
+        .calendar-dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .calendar-dashboard.hide-weekends .days-header {
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+        }
+
+        .calendar-dashboard.hide-weekends .days-grid {
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+        }
+
+        .month-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .month-name {
+            font-size: 15px;
+            font-weight: bold;
+            color: var(--accent-secondary);
+            margin-bottom: 8px;
+            text-align: center;
+        }
+
+        .clickable-month-name {
+            cursor: pointer;
+            transition: color 0.1s ease;
+        }
+        .clickable-month-name:hover {
+            color: var(--accent-primary);
+            text-decoration: underline;
+        }
+
+        .days-header {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 4px; /* Align precisely with days-grid columns! */
+            text-align: center;
+            font-size: 10px;
+            font-weight: bold;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .days-grid {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 4px;
+            flex-grow: 1;
+        }
+
+        .day-cell {
+            min-height: 58px;
+            background: var(--grid-day-bg);
+            border-radius: 3px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: flex-start;
+            padding: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            position: relative;
+            transition: all 0.1s;
+            box-sizing: border-box;
+        }
+
+        .calendar-dashboard.single-month-view .day-cell {
+            min-height: 90px;
+        }
+
+        .day-cell:hover {
+            background: var(--grid-day-hover);
+            border-color: var(--text-muted);
+        }
+
+        .day-cell.padding {
+            background: transparent;
+            cursor: default;
+            pointer-events: none;
+        }
+
+        .day-number {
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+
+        .day-cell.today {
+            background: rgba(99, 179, 237, 0.2);
+            border-color: var(--accent-secondary);
+        }
+
+        /* Drag and Drop hover border */
+        .day-cell.drag-over {
+            background: var(--grid-day-hover) !important;
+            border: 1px dashed var(--accent-secondary) !important;
+            box-shadow: 0 0 5px var(--accent-secondary);
+        }
+
+        /* Acceptable/Violation highlight zones on drag start */
+        .day-cell.drag-acceptable {
+            background: rgba(72, 187, 120, 0.25) !important;
+            border: 1px dashed var(--success-color) !important;
+        }
+        
+        .day-cell.drag-violation {
+            background: rgba(229, 62, 98, 0.25) !important;
+            border: 1px dashed var(--danger-color) !important;
+        }
+
+        /* Task text chips in cells */
+        .day-tasks-container {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            width: 100%;
+            margin-top: 2px;
+            box-sizing: border-box;
+        }
+
+        .mini-task-chip {
+            font-size: 11px;
+            padding: 2px 5px;
+            border-radius: 2px;
+            width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-align: left;
+            box-sizing: border-box;
+            font-weight: bold;
+            line-height: 1.3;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+            cursor: grab;
+        }
+
+        .mini-task-chip:active {
+            cursor: grabbing;
+        }
+
+        .mini-task-chip.has-staff-allocation {
+            border: 2px solid #e53e3e !important;
+            box-shadow: 0 0 4px rgba(229, 62, 98, 0.6) !important;
+        }
+
+        /* Interval Display Overlay */
+        .interval-badge-container {
+            position: absolute;
+            background: var(--accent-primary);
+            color: #fff;
+            font-size: 9px;
+            padding: 1px 4px;
+            border-radius: 3px;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            z-index: 10;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            pointer-events: none;
+        }
+
+        /* Real-time drag spacing badge overlay */
+        .drag-spacing-badge {
+            position: absolute;
+            color: #fff;
+            font-size: 9px;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 3px;
+            top: -16px;
+            left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            z-index: 20;
+            pointer-events: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            animation: pulseBadge 1s infinite alternate;
+        }
+
+        @keyframes pulseBadge {
+            from { transform: translateX(-50%) scale(1); }
+            to { transform: translateX(-50%) scale(1.04); }
+        }
+
+        /* Tracking stats panel */
+        .interval-stats-panel {
+            display: none;
+            background: var(--card-bg);
+            border: 2px solid var(--accent-primary);
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 25px;
+        }
+
+        .interval-stats-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: var(--accent-primary);
+            margin-top: 0;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .interval-list {
+            display: flex;
+            gap: 15px;
+            overflow-x: auto;
+            padding-bottom: 10px;
+        }
+
+        .interval-card {
+            min-width: 180px;
+            background: var(--container-bg);
+            border: 1px solid var(--border-color);
+            padding: 10px;
+            border-radius: 4px;
+            flex-shrink: 0;
+            font-size: 12px;
+        }
+
+        .interval-card-header {
+            font-weight: bold;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 4px;
+            margin-bottom: 6px;
+            color: var(--accent-secondary);
+        }
+
+        .interval-gap {
+            font-size: 13px;
+            font-weight: bold;
+            margin-top: 4px;
+        }
+        .interval-warning {
+            color: #f6ad55;
+        }
+        .interval-short {
+            color: #68d391;
+        }
+        .interval-normal {
+            color: var(--text-main);
+        }
+
+        /* Custom Context Menu */
+        .custom-context-menu {
+            display: none;
+            position: fixed;
+            z-index: 4000;
+            background: var(--container-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            padding: 5px 0;
+            min-width: 190px;
+            overflow: visible; /* Allow submenus to show outside menu boundaries */
+        }
+        
+        .context-menu-item {
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: space-between; /* Push arrow to the right edge */
+            gap: 8px;
+            color: var(--text-main);
+            transition: background 0.15s;
+            position: relative; /* Position reference for absolute submenus */
+        }
+        
+        .context-menu-item:hover {
+            background: var(--accent-secondary);
+            color: #fff;
+        }
+
+        .context-submenu {
+            display: none;
+            position: absolute;
+            left: 100%;
+            top: -5px;
+            background: var(--container-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            padding: 5px 0;
+            min-width: 190px;
+            z-index: 4100;
+        }
+
+        .context-menu-item:hover > .context-submenu {
+            display: block;
+        }
+
+        /* Submenu specific layout rules */
+        .context-submenu .context-menu-item {
+            justify-content: flex-start;
+            color: var(--text-main);
+        }
+
+        .context-submenu .context-menu-item:hover {
+            background: var(--accent-secondary);
+            color: #fff;
+        }
+
+        .context-menu-item.danger-item {
+            color: var(--danger-color);
+        }
+        .context-menu-item.danger-item:hover {
+            background: var(--danger-color);
+            color: #fff;
+        }
+
+        /* Modals styling */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(5px);
+            z-index: 2000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-box {
+            background: var(--container-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 25px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            min-width: 380px;
+            max-width: 500px;
+            transition: all 0.3s;
+        }
+
+        .modal-box h2 {
+            margin-top: 0;
+            color: var(--accent-secondary);
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .modal-section {
+            border-top: 1px solid var(--border-color);
+            padding-top: 15px;
+            margin-top: 15px;
+        }
+
+        .modal-section-title {
+            font-weight: bold;
+            font-size: 13px;
+            margin-bottom: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Day Scheduler Styles */
+        .day-task-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 10px;
+            border-radius: 4px;
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+
+        .day-task-name {
+            font-weight: bold;
+        }
+
+        .day-task-meta {
+            font-size: 11px;
+            opacity: 0.85;
+            margin-left: 5px;
+        }
+
+        .day-task-actions {
+            display: flex;
+            align-items: center;
+        }
+
+        .delete-icon-btn {
+            background: transparent;
+            border: none;
+            color: #fff;
+            opacity: 0.7;
+            cursor: pointer;
+            padding: 2px;
+            font-size: 14px;
+        }
+        .delete-icon-btn:hover {
+            opacity: 1;
+            color: var(--danger-color);
+        }
+        
+        /* Notifications / Toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #2d3748;
+            border: 1px solid #4a5568;
+            padding: 12px 20px;
+            border-radius: 4px;
+            color: #fff;
+            font-weight: bold;
+            z-index: 3000;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            display: none;
+            animation: slideIn 0.3s forwards;
+        }
+
+        .toast.success { border-color: var(--success-color); background: rgba(56, 161, 105, 0.95); }
+        .toast.error { border-color: var(--danger-color); background: rgba(229, 62, 98, 0.95); }
+
+        @keyframes slideIn {
+            from { transform: translateY(100px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <div class="logo-area">
+            <img src="RotaRTLogoSmall.png" alt="Radiotherapy Rota Logo" id="mainLogo" style="max-height: 45px; display: block;">
+            <h1>Annual Task Scheduler & Overview</h1>
+        </div>
+        <div class="nav-buttons">
+            <button onclick="window.location.href='/'" class="btn-secondary">◀ Rota Dashboard</button>
+            <button onclick="toggleTheme()" id="themeBtn" class="btn-secondary">Toggle Light Theme</button>
+        </div>
+    </header>
+
+    <div class="control-panel" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+        <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+            <div class="roster-toggle-group">
+                <button id="qaRosterBtn" class="roster-toggle-btn active" onclick="switchRoster('QA')">QA</button>
+                <button id="planningRosterBtn" class="roster-toggle-btn" onclick="switchRoster('Planning')">Planning</button>
+                <button id="stereoRosterBtn" class="roster-toggle-btn" onclick="switchRoster('Stereo')">Stereo</button>
+                <button id="brachyRosterBtn" class="roster-toggle-btn" onclick="switchRoster('Brachy')">Brachy</button>
+            </div>
+            
+            <div class="roster-toggle-group">
+                <button id="viewYearBtn" class="roster-toggle-btn active" onclick="switchView('year')">12 Months</button>
+                <button id="viewMonthBtn" class="roster-toggle-btn" onclick="switchView('month')">Single Month</button>
+            </div>
+        </div>
+        
+        <div class="selectors" style="display: flex; align-items: center; gap: 10px;">
+            <!-- Weekend Toggle Checkbox -->
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; user-select: none; margin-right: 10px;">
+                <input type="checkbox" id="weekendToggle" checked onchange="toggleWeekends(this.checked)" style="margin: 0;">
+                <span>Show Weekends</span>
+            </label>
+
+            <!-- Month Scroll Controls (hidden by default) -->
+            <div id="monthScrollControls" style="display: none; align-items: center; gap: 8px; margin-right: 10px;">
+                <button onclick="navigateMonth(-1)" class="btn-secondary" style="padding: 4px 8px; font-size: 11px;">◀ Prev Month</button>
+                <span id="activeMonthLabel" style="font-size: 13px; font-weight: bold; color: var(--accent-primary); min-width: 110px; text-align: center;">Month Year</span>
+                <button onclick="navigateMonth(1)" class="btn-secondary" style="padding: 4px 8px; font-size: 11px;">Next Month ▶</button>
+            </div>
+            
+            <label for="yearSelect"><strong>Year:</strong></label>
+            <input type="number" id="yearSelect" min="2020" max="2035" value="2026" style="width: 80px;" onchange="loadAnnualData()">
+            <button onclick="loadAnnualData()">Refresh View</button>
+        </div>
+    </div>
+
+    <div class="main-layout">
+        <!-- Sidebar Controls -->
+        <div class="sidebar">
+            <!-- Task Filters -->
+            <div class="panel">
+                <h2>Category Filter</h2>
+                <div style="margin-bottom: 10px; display: flex; gap: 8px;">
+                    <button onclick="toggleAllFilters(true)" style="font-size: 11px; padding: 4px 8px; flex-grow: 1;" class="btn-secondary">Show All</button>
+                    <button onclick="toggleAllFilters(false)" style="font-size: 11px; padding: 4px 8px; flex-grow: 1;" class="btn-secondary">Clear All</button>
+                </div>
+                <div class="task-list-filter" id="taskListFilter">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+
+            <!-- Task Templates -->
+            <div class="panel">
+                <h2>Task Templates</h2>
+                <p style="font-size: 11px; color: var(--text-muted); margin-top: -6px; margin-bottom: 10px;">Drag a template card onto the calendar to schedule it</p>
+                <div class="template-list" id="templateList">
+                    <!-- Populated dynamically from database -->
+                </div>
+                
+                <div class="template-form">
+                    <strong style="font-size: 12px; color: var(--accent-secondary);">Create Template</strong>
+                    <div class="form-row">
+                        <label for="templateName">Name</label>
+                        <input type="text" id="templateName" placeholder="e.g. LA10 PSQA">
+                    </div>
+                    <div class="form-row">
+                        <label for="templateDuration">Duration (Days)</label>
+                        <input type="number" id="templateDuration" min="1" max="14" value="1">
+                    </div>
+                    <div class="form-row">
+                        <label for="templateInterval">Target Interval (Weeks)</label>
+                        <input type="number" id="templateInterval" min="1" max="52" placeholder="e.g. 6 (optional)">
+                    </div>
+                    <div class="form-row">
+                        <label for="templateAbbreviation">Abbreviation Code</label>
+                        <input type="text" id="templateAbbreviation" maxlength="8" placeholder="e.g. L10M (max 8 chars)">
+                    </div>
+                    <div class="form-row">
+                        <label for="templateCategory">Category</label>
+                        <select id="templateCategory" style="width: 100%; padding: 4px; box-sizing: border-box; background-color: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
+                            <option value="">-- None (Other) --</option>
+                            <option value="Monthly Linac QA">Monthly Linac QA</option>
+                            <option value="CT QA">CT QA</option>
+                            <option value="Scheduled Service + QA">Scheduled Service + QA</option>
+                        </select>
+                    </div>
+                    <div class="form-row" style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px;">
+                        <label style="font-weight: bold; font-size: 11px; color: var(--text-muted);">Include Other Tasks in Spacing Intervals</label>
+                        <div id="templateLinkedTasksContainer" style="max-height: 80px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 4px; padding: 6px; background: var(--card-bg); display: flex; flex-direction: column; gap: 4px;">
+                            <!-- Populated dynamically with checkboxes -->
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <label>Color Badge</label>
+                        <div class="color-selector" id="colorSelector">
+                            <!-- Populated with color dots -->
+                        </div>
+                    </div>
+                    <button id="saveTemplateBtn" onclick="saveTemplate()" class="btn-success" style="margin-top: 5px;">+ Save Template</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Annual Dashboard Grid -->
+        <div class="calendar-dashboard" id="calendarDashboard">
+            <!-- 12 Months will be dynamically rendered here -->
+        </div>
+    </div>
+
+    <!-- Interval stats block (shown only when a task is tracked) -->
+    <div id="intervalStatsPanel" class="interval-stats-panel" style="margin-top: 25px; margin-bottom: 0;">
+        <div class="interval-stats-title" style="margin-bottom: 15px;">
+            <span>Interval Analysis for <span id="trackedTaskName" style="text-decoration: underline;">Task</span></span>
+            <button onclick="clearTracking()" class="btn-secondary" style="font-size: 11px; padding: 4px 8px;">Clear Tracking</button>
+        </div>
+        
+        <div style="display: flex; gap: 20px; align-items: stretch; flex-wrap: wrap;">
+            <!-- Left Block: Visual Chart & Stats -->
+            <div style="flex: 1; min-width: 320px; display: flex; flex-direction: column; justify-content: space-between; border-right: 1px solid var(--border-color); padding-right: 20px;">
+                <div style="display: flex; gap: 15px; margin-bottom: 12px; font-size: 12px; background: var(--container-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
+                    <div style="flex: 1; text-align: center;">
+                        <div style="color: var(--text-muted); font-size: 10px; font-weight: bold; text-transform: uppercase;">Min Gap</div>
+                        <div id="statsMinVal" style="font-size: 16px; font-weight: bold; color: var(--accent-primary); margin-top: 2px;">--</div>
+                    </div>
+                    <div style="flex: 1; text-align: center; border-left: 1px solid var(--border-color); border-right: 1px solid var(--border-color);">
+                        <div style="color: var(--text-muted); font-size: 10px; font-weight: bold; text-transform: uppercase;">Avg Gap</div>
+                        <div id="statsAvgVal" style="font-size: 16px; font-weight: bold; color: var(--accent-primary); margin-top: 2px;">--</div>
+                    </div>
+                    <div style="flex: 1; text-align: center;">
+                        <div style="color: var(--text-muted); font-size: 10px; font-weight: bold; text-transform: uppercase;">Max Gap</div>
+                        <div id="statsMaxVal" style="font-size: 16px; font-weight: bold; color: var(--accent-primary); margin-top: 2px;">--</div>
+                    </div>
+                </div>
+                
+                <!-- Vis: Canvas Boxplot / Distribution -->
+                <div style="position: relative; width: 100%; height: 75px; background: var(--container-bg); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px;">
+                    <canvas id="intervalChartCanvas" style="width: 100%; height: 75px; display: block;"></canvas>
+                </div>
+            </div>
+            
+            <!-- Right Block: Chronological list of interval cards -->
+            <div style="flex: 2; min-width: 400px; display: flex; flex-direction: column;">
+                <div style="font-size: 10px; font-weight: bold; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px;">Chronological Interval Timeline</div>
+                <div class="interval-list" id="intervalListContainer">
+                    <!-- Cards will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Scheduler Modal -->
+<div id="dayModal" class="modal-overlay" style="display: none;">
+    <div class="modal-box">
+        <h2 id="modalDayTitle">Schedule Date</h2>
+        
+        <!-- List of existing tasks on that day -->
+        <div class="modal-section" style="border-top: none; padding-top: 0; margin-top: 0;">
+            <div class="modal-section-title">Tasks Scheduled on this Day</div>
+            <div id="modalDayTasksList" style="max-height: 120px; overflow-y: auto;">
+                <!-- List dynamically populated -->
+            </div>
+        </div>
+
+        <!-- Add Single Task Section -->
+        <div class="modal-section">
+            <div class="modal-section-title">Add Single Task</div>
+            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                <input type="text" id="singleTaskName" placeholder="Task Name" style="flex-grow: 1;">
+                <select id="singleTaskDuration" style="width: 100px;">
+                    <option value="All Day">All Day</option>
+                    <option value="AM">AM</option>
+                    <option value="PM">PM</option>
+                </select>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                <label for="singleTaskCategory" style="font-size: 11px; font-weight: bold; color: var(--text-muted); width: 60px;">Category:</label>
+                <select id="singleTaskCategory" style="flex-grow: 1; padding: 4px; box-sizing: border-box; background-color: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
+                    <option value="">-- None (Other) --</option>
+                    <option value="Monthly Linac QA">Monthly Linac QA</option>
+                    <option value="CT QA">CT QA</option>
+                    <option value="Scheduled Service + QA">Scheduled Service + QA</option>
+                </select>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-size: 11px; font-weight: bold; color: var(--text-muted);">Color:</div>
+                <div class="color-selector" id="modalSingleColorSelector" style="margin: 0; width: 220px;">
+                    <!-- Colored dots populated dynamically -->
+                </div>
+            </div>
+            <button onclick="addSingleTask()" class="btn-success" style="width: 100%; margin-top: 10px;">Add Daily Task</button>
+        </div>
+
+        <!-- Apply Template Section -->
+        <div class="modal-section">
+            <div class="modal-section-title">Apply Template (Multi-Day)</div>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <select id="modalTemplateSelect" style="width: 100%;">
+                    <option value="">-- Select a Template --</option>
+                </select>
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;">
+                    <input type="checkbox" id="modalSkipWeekends" checked>
+                    <span>Skip weekends (Sat/Sun) by default</span>
+                </label>
+                <button onclick="applyTemplateAtDate()" class="btn-success">Apply Template Starting Today</button>
+            </div>
+        </div>
+
+        <div class="modal-buttons">
+            <button onclick="closeDayModal()" class="btn-secondary">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Event Modal -->
+<div id="editEventModal" class="modal-overlay" style="display: none;">
+    <div class="modal-box" style="width: 400px;">
+        <h2 id="editEventModalTitle">Edit Task Event</h2>
+        
+        <div class="form-row" style="margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px;">
+            <label for="editEventName" style="font-weight: bold; font-size: 12px;">Task Name</label>
+            <input type="text" id="editEventName" placeholder="Task Name" style="width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-bg); color: var(--text-color);">
+        </div>
+
+        <div class="form-row" style="margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px;">
+            <label for="editEventAbbreviation" style="font-weight: bold; font-size: 12px;">Abbreviation Code</label>
+            <input type="text" id="editEventAbbreviation" maxlength="8" placeholder="e.g. L10M" style="width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-bg); color: var(--text-color);">
+        </div>
+
+        <div class="form-row" style="margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px;">
+            <label for="editEventCategory" style="font-weight: bold; font-size: 12px;">Category</label>
+            <select id="editEventCategory" style="width: 100%; padding: 6px; box-sizing: border-box; background-color: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
+                <option value="">-- None (Other) --</option>
+                <option value="Monthly Linac QA">Monthly Linac QA</option>
+                <option value="CT QA">CT QA</option>
+                <option value="Scheduled Service + QA">Scheduled Service + QA</option>
+            </select>
+        </div>
+
+        <div class="form-row" style="margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-weight: bold; font-size: 12px; margin-bottom: 4px;">Color Badge</label>
+            <div class="color-selector" id="editEventColorSelector" style="margin: 0; width: 100%;">
+                <!-- Colored dots populated dynamically -->
+            </div>
+        </div>
+
+        <div class="modal-buttons" style="margin-top: 20px;">
+            <button onclick="closeEditEventModal()" class="btn-secondary">Cancel</button>
+            <button onclick="saveEventEdit()" class="btn-success">Save Changes</button>
+        </div>
+    </div>
+</div>
+
+
+<!-- Custom Right-Click Context Menu -->
+<div id="customContextMenu" class="custom-context-menu" style="display: none;">
+    <div id="taskContextItems">
+        <div class="context-menu-item" onclick="triggerContextInspect()">🔍 Inspect Interval (Track)</div>
+        <div class="context-menu-item" onclick="triggerContextEdit()">✏️ Edit Task Event</div>
+        <div class="context-menu-item danger-item" onclick="triggerContextDelete()">🗑️ Delete Task</div>
+    </div>
+    <div id="dayContextItems" style="display: none;">
+        <div class="context-menu-header" style="font-size: 10px; padding: 6px 12px; color: var(--text-muted); font-weight: bold; text-transform: uppercase; border-bottom: 1px solid var(--border-color); background: var(--container-bg);">Add from Template:</div>
+        <div id="dayContextMenuTemplatesList">
+            <!-- Dynamically populated -->
+        </div>
+    </div>
+</div>
+
+<!-- Toast notification box -->
+<div id="toast" class="toast">Notification text</div>
+
+<script>
+    // State
+    let currentRoster = 'QA';
+    let currentYear = 2026;
+    let isLightTheme = false;
+    let allTasks = [];
+    let templates = [];
+    let filters = {
+        "Monthly Linac QA": true,
+        "CT QA": true,
+        "Scheduled Service + QA": true,
+        "Other": false
+    };
+    let trackedTask = null; // String name of task being tracked for intervals
+    let trackedTaskInstance = null; // Specific task instance tracked (for persistent movement highlights)
+    
+    // View state toggles
+    let currentViewMode = 'year'; // 'year' or 'month'
+    let activeMonthIndex = new Date().getMonth();
+    let activeMonthYear = 2026;
+    let showWeekends = true; // 'true' shows Sat/Sun, 'false' hides them
+    
+    // Drag and Drop templates & tasks state
+    let draggedTemplate = null;
+    let draggedTaskInstance = null; // Storing the task object being moved
+    let activeContextMenuTaskId = null;
+    
+    // Single Selected Date in Modal
+    let selectedDateStr = '';
+    
+    // Forms state
+    let selectedTemplateColor = 'color-1';
+    let selectedSingleTaskColor = 'color-1';
+
+    const monthNames = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    ];
+
+    const colorsList = [
+        'color-1', 'color-2', 'color-3', 'color-4', 'color-5', 
+        'color-6', 'color-7', 'color-8', 'color-9', 'color-10', 'color-11'
+    ];
+
+    document.addEventListener('DOMContentLoaded', () => {
+        // Load initial theme from localStorage
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'light') {
+            isLightTheme = true;
+            document.body.classList.add('light-theme');
+            document.getElementById('themeBtn').innerText = 'Toggle Dark Theme';
+        }
+
+        // Set initial year
+        const currentSystemDate = new Date();
+        currentYear = currentSystemDate.getFullYear();
+        document.getElementById('yearSelect').value = currentYear;
+        activeMonthYear = currentYear;
+
+        // Initialize Forms Color Selectors
+        renderColorDots('colorSelector', 'selectedTemplateColor');
+        renderColorDots('modalSingleColorSelector', 'selectedSingleTaskColor');
+
+        // Load DB data
+        loadAnnualData();
+    });
+
+    function toggleTheme() {
+        isLightTheme = !isLightTheme;
+        document.body.classList.toggle('light-theme', isLightTheme);
+        document.getElementById('themeBtn').innerText = isLightTheme ? 'Toggle Dark Theme' : 'Toggle Light Theme';
+        localStorage.setItem('theme', isLightTheme ? 'light' : 'dark');
+    }
+
+    function switchRoster(rosterName) {
+        currentRoster = rosterName;
+        
+        // Update tabs active state
+        document.querySelectorAll('.roster-toggle-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        if (rosterName === 'QA') document.getElementById('qaRosterBtn').classList.add('active');
+        if (rosterName === 'Planning') document.getElementById('planningRosterBtn').classList.add('active');
+        if (rosterName === 'Stereo') document.getElementById('stereoRosterBtn').classList.add('active');
+        if (rosterName === 'Brachy') document.getElementById('brachyRosterBtn').classList.add('active');
+
+        // Reload data
+        loadAnnualData();
+    }
+
+    async function loadAnnualData() {
+        const yearInput = document.getElementById('yearSelect');
+        currentYear = parseInt(yearInput.value) || new Date().getFullYear();
+        activeMonthYear = currentYear;
+
+        await fetchTemplates();
+        await fetchTasks();
+        
+        renderCalendarDashboard();
+    }
+
+    async function switchView(view) {
+        currentViewMode = view;
+        
+        // Update toggle buttons active class
+        document.getElementById('viewYearBtn').classList.toggle('active', view === 'year');
+        document.getElementById('viewMonthBtn').classList.toggle('active', view === 'month');
+        
+        // Show/hide month controls
+        document.getElementById('monthScrollControls').style.display = view === 'month' ? 'flex' : 'none';
+        
+        if (view === 'month') {
+            const today = new Date();
+            if (activeMonthIndex === null || activeMonthIndex === undefined) {
+                activeMonthIndex = today.getMonth();
+            }
+            activeMonthYear = parseInt(document.getElementById('yearSelect').value) || today.getFullYear();
+            updateMonthLabel();
+        }
+        
+        // Fetch tasks for the correct view range and re-render
+        await fetchTasks();
+        renderCalendarDashboard();
+    }
+
+    async function navigateMonth(direction) {
+        activeMonthIndex += direction;
+        if (activeMonthIndex < 0) {
+            activeMonthIndex = 11;
+            activeMonthYear--;
+        } else if (activeMonthIndex > 11) {
+            activeMonthIndex = 0;
+            activeMonthYear++;
+        }
+        
+        // Synchronize the Year input value if the year changes
+        document.getElementById('yearSelect').value = activeMonthYear;
+        currentYear = activeMonthYear;
+        
+        updateMonthLabel();
+        
+        // Fetch daily tasks for the new month and re-render
+        await fetchTasks();
+        renderCalendarDashboard();
+    }
+
+    function updateMonthLabel() {
+        document.getElementById('activeMonthLabel').innerText = `${monthNames[activeMonthIndex]} ${activeMonthYear}`;
+    }
+
+    function toggleWeekends(checked) {
+        showWeekends = checked;
+        renderCalendarDashboard();
+    }
+
+    // --- TEMPLATES WORKFLOW ---
+    function updateLinkedTasksCheckboxes(excludeName = null, checkedNames = []) {
+        const container = document.getElementById('templateLinkedTasksContainer');
+        if (!container) return;
+        
+        // Get all unique template names from templates list
+        const allNames = [...new Set(templates.map(t => t.task_name))].sort();
+        
+        container.innerHTML = allNames
+            .filter(name => name !== excludeName)
+            .map(name => {
+                const isChecked = checkedNames.includes(name);
+                return `
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer; margin: 0; user-select: none;">
+                        <input type="checkbox" name="linkedTaskCheckbox" value="${escapeHTML(name)}" ${isChecked ? 'checked' : ''} style="margin: 0;">
+                        <span style="text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">${escapeHTML(name)}</span>
+                    </label>
+                `;
+            }).join('');
+            
+        if (container.innerHTML === '') {
+            container.innerHTML = `<div style="font-size: 10px; color: var(--text-muted); font-style: italic; padding: 4px;">No other templates available</div>`;
+        }
+    }
+
+    async function fetchTemplates() {
+        try {
+            const res = await fetch(`/api/templates?rosterType=${currentRoster}`);
+            if (res.ok) {
+                templates = await res.json();
+                renderTemplatesList();
+                populateModalTemplateSelect();
+                updateLinkedTasksCheckboxes(null);
+            } else {
+                showToast("Failed to fetch templates from database.", "error");
+            }
+        } catch (err) {
+            console.error(err);
+            showToast("Network error fetching templates.", "error");
+        }
+    }
+
+    let editingTemplateId = null;
+
+    function renderTemplatesList() {
+        const list = document.getElementById('templateList');
+        if (templates.length === 0) {
+            list.innerHTML = `<div style="color: var(--text-muted); font-size: 12px; font-style: italic; padding: 10px 0;">No templates saved in database yet.</div>`;
+            return;
+        }
+
+        list.innerHTML = templates.map(t => `
+            <div class="template-card" draggable="true" ondragstart="handleTemplateDragStart(event, ${t.id})">
+                <div class="template-info">
+                    <span class="template-name">${escapeHTML(t.task_name)} ${t.abbreviation ? `<span style="font-size:11px; color:var(--accent-secondary); font-weight:bold;">(${escapeHTML(t.abbreviation)})</span>` : ''}</span>
+                    <span class="template-meta">
+                        ${t.duration} ${t.duration === 1 ? 'day' : 'days'}
+                        ${t.target_interval ? ` | Max gap: ${t.target_interval}w` : ''}
+                        ${t.category ? ` | ${escapeHTML(t.category)}` : ''}
+                        | <span class="${t.color}" style="display:inline-block; width:10px; height:10px; border-radius:50%;"></span> ${t.color.replace('color-', 'Color ')}
+                    </span>
+                </div>
+                <div style="display: flex; gap: 4px; align-items: center;">
+                    <button onclick="event.stopPropagation(); editTemplate(${t.id})" class="btn-secondary" style="padding: 4px 8px; font-size: 11px;">Edit</button>
+                    <button onclick="event.stopPropagation(); deleteTemplate(${t.id})" class="btn-danger" style="padding: 4px 8px; font-size: 11px;">Delete</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function editTemplate(id) {
+        const t = templates.find(temp => temp.id === id);
+        if (!t) return;
+        
+        editingTemplateId = id;
+        
+        document.getElementById('templateName').value = t.task_name;
+        document.getElementById('templateDuration').value = t.duration;
+        document.getElementById('templateInterval').value = t.target_interval || '';
+        document.getElementById('templateAbbreviation').value = t.abbreviation || '';
+        document.getElementById('templateCategory').value = t.category || '';
+        
+        // Select color
+        selectedTemplateColor = t.color;
+        document.querySelectorAll('#colorSelector .color-dot').forEach(dot => {
+            dot.classList.toggle('selected', dot.getAttribute('data-color') === t.color);
+        });
+        
+        // Update linked task checkboxes, checking the ones saved in the template
+        updateLinkedTasksCheckboxes(t.task_name, t.linked_tasks ? t.linked_tasks.split(',') : []);
+        
+        // Update form button text & style
+        const formBtn = document.getElementById('saveTemplateBtn');
+        formBtn.innerText = "✏️ Update Template";
+        formBtn.classList.remove('btn-success');
+        formBtn.classList.add('btn-secondary');
+        
+        // Show cancel button
+        let cancelBtn = document.getElementById('cancelTemplateEditBtn');
+        if (!cancelBtn) {
+            cancelBtn = document.createElement('button');
+            cancelBtn.id = 'cancelTemplateEditBtn';
+            cancelBtn.innerText = "Cancel Edit";
+            cancelBtn.className = "btn-secondary";
+            cancelBtn.style.marginTop = "5px";
+            cancelBtn.onclick = cancelTemplateEdit;
+            formBtn.parentNode.appendChild(cancelBtn);
+        }
+    }
+
+    function cancelTemplateEdit() {
+        editingTemplateId = null;
+        document.getElementById('templateName').value = '';
+        document.getElementById('templateDuration').value = 1;
+        document.getElementById('templateInterval').value = '';
+        document.getElementById('templateAbbreviation').value = '';
+        document.getElementById('templateCategory').value = '';
+        
+        selectedTemplateColor = 'color-1';
+        document.querySelectorAll('#colorSelector .color-dot').forEach(dot => {
+            dot.classList.toggle('selected', dot.getAttribute('data-color') === 'color-1');
+        });
+        
+        updateLinkedTasksCheckboxes(null);
+        
+        const formBtn = document.getElementById('saveTemplateBtn');
+        formBtn.innerText = "+ Save Template";
+        formBtn.classList.remove('btn-secondary');
+        formBtn.classList.add('btn-success');
+        
+        const cancelBtn = document.getElementById('cancelTemplateEditBtn');
+        if (cancelBtn) cancelBtn.remove();
+    }
+
+    function populateModalTemplateSelect() {
+        const select = document.getElementById('modalTemplateSelect');
+        select.innerHTML = '<option value="">-- Select a Template --</option>' + 
+            templates.map(t => `<option value="${t.id}">${escapeHTML(t.task_name)} (${t.duration} days)</option>`).join('');
+    }
+
+    async function saveTemplate() {
+        const nameInput = document.getElementById('templateName');
+        const durationInput = document.getElementById('templateDuration');
+        const intervalInput = document.getElementById('templateInterval');
+        const abbreviationInput = document.getElementById('templateAbbreviation');
+        const categorySelect = document.getElementById('templateCategory');
+        
+        const task_name = nameInput.value.trim();
+        const duration = parseInt(durationInput.value) || 1;
+        const target_interval = intervalInput.value ? parseInt(intervalInput.value) : null;
+        const abbreviation = abbreviationInput.value.trim() || null;
+        const category = categorySelect.value || null;
+        const color = selectedTemplateColor;
+
+        // Read checked linked tasks
+        const checkedBoxes = document.querySelectorAll('input[name="linkedTaskCheckbox"]:checked');
+        const linked_tasks = checkedBoxes.length > 0 
+            ? Array.from(checkedBoxes).map(cb => cb.value).join(',')
+            : null;
+
+        if (!task_name) {
+            showToast("Please enter a template name.", "error");
+            return;
+        }
+
+        let applyToExisting = false;
+        if (editingTemplateId) {
+            applyToExisting = confirm(`Apply updates (Color: ${color}, Abbreviation: ${abbreviation || 'None'}, Category: ${category || 'None'}) to all existing scheduled tasks of this type? (Click Cancel to apply to newly added tasks only)`);
+        }
+
+        try {
+            const res = await fetch('/api/templates', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    task_name, 
+                    duration, 
+                    color, 
+                    rosterType: currentRoster,
+                    target_interval,
+                    abbreviation,
+                    category,
+                    linked_tasks,
+                    applyToExisting
+                })
+            });
+
+            if (res.ok) {
+                showToast(`Template "${task_name}" updated in database.`, "success");
+                if (editingTemplateId) {
+                    cancelTemplateEdit();
+                } else {
+                    nameInput.value = '';
+                    durationInput.value = 1;
+                    intervalInput.value = '';
+                    abbreviationInput.value = '';
+                    categorySelect.value = '';
+                }
+                fetchTemplates();
+                loadAnnualData(); // Reload to pick up color/abbreviation cascade updates
+            } else {
+                showToast("Failed to save template.", "error");
+            }
+        } catch (err) {
+            console.error(err);
+            showToast("Network error saving template.", "error");
+        }
+    }
+
+    async function deleteTemplate(id) {
+        if (!confirm("Are you sure you want to delete this template from the database?")) return;
+
+        try {
+            const res = await fetch(`/api/templates/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                showToast("Template deleted successfully.", "success");
+                fetchTemplates();
+            } else {
+                showToast("Failed to delete template.", "error");
+            }
+        } catch (err) {
+            console.error(err);
+            showToast("Network error deleting template.", "error");
+        }
+    }
+
+    // --- DAILY TASKS WORKFLOW ---
+    async function fetchTasks() {
+        let startDate, endDate;
+        
+        if (currentViewMode === 'month') {
+            const startMonthStr = String(activeMonthIndex + 1).padStart(2, '0');
+            startDate = `${activeMonthYear}-${startMonthStr}-01`;
+            const endMonthDays = new Date(activeMonthYear, activeMonthIndex + 1, 0).getDate();
+            endDate = `${activeMonthYear}-${startMonthStr}-${String(endMonthDays).padStart(2, '0')}`;
+        } else {
+            const today = new Date();
+            const currentSystemMonth = today.getMonth();
+            
+            let startMonth = currentSystemMonth - 1;
+            let startYear = currentYear;
+            if (startMonth < 0) {
+                startMonth = 11;
+                startYear = currentYear - 1;
+            }
+            
+            const startMonthStr = String(startMonth + 1).padStart(2, '0');
+            startDate = `${startYear}-${startMonthStr}-01`;
+            
+            let endMonth = (startMonth + 11) % 12;
+            let endYear = startYear + Math.floor((startMonth + 11) / 12);
+            const endMonthDays = new Date(endYear, endMonth + 1, 0).getDate();
+            const endMonthStr = String(endMonth + 1).padStart(2, '0');
+            endDate = `${endYear}-${endMonthStr}-${String(endMonthDays).padStart(2, '0')}`;
+        }
+
+        try {
+            const res = await fetch(`/api/tasks?startDate=${startDate}&endDate=${endDate}&rosterType=${currentRoster}`);
+            if (res.ok) {
+                allTasks = await res.json();
+                
+                // Filters are category-based; no need to rebuild per task name
+
+                renderFiltersList();
+                const uniqueTaskNames = new Set(allTasks.map(t => t.task_name));
+                if (trackedTask && !uniqueTaskNames.has(trackedTask)) {
+                    clearTracking();
+                } else if (trackedTask) {
+                    analyzeIntervals();
+                }
+            } else {
+                showToast("Failed to fetch annual tasks.", "error");
+            }
+        } catch (err) {
+            console.error(err);
+            showToast("Network error fetching annual tasks.", "error");
+        }
+    }
+
+    const CATEGORY_OPTIONS = ['Monthly Linac QA', 'CT QA', 'Scheduled Service + QA', 'Other'];
+
+    function getTaskCategory(task) {
+        return task.category || 'Other';
+    }
+
+    function renderFiltersList() {
+        const container = document.getElementById('taskListFilter');
+
+        // Count tasks per category
+        const categoryCounts = {};
+        CATEGORY_OPTIONS.forEach(cat => categoryCounts[cat] = 0);
+        allTasks.forEach(t => {
+            const cat = getTaskCategory(t);
+            categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+        });
+
+        // Also collect unique task names per category for the Track buttons
+        const taskNamesByCategory = {};
+        CATEGORY_OPTIONS.forEach(cat => taskNamesByCategory[cat] = new Set());
+        allTasks.forEach(t => {
+            const cat = getTaskCategory(t);
+            if (taskNamesByCategory[cat]) taskNamesByCategory[cat].add(t.task_name);
+        });
+
+        container.innerHTML = CATEGORY_OPTIONS.map(cat => {
+            const safeCat = escapeHTML(cat);
+            const taskNames = [...(taskNamesByCategory[cat] || [])].sort();
+            const taskList = taskNames.length > 0 
+                ? taskNames.map(n => `<div style="font-size:10px; color:var(--text-muted); padding-left:22px; cursor:pointer;" onclick="toggleTracking('${escapeHTML(n)}')" title="Click to track intervals for ${escapeHTML(n)}">${trackedTask === n ? '📍 ' : ''}${escapeHTML(n)}</div>`).join('')
+                : '';
+            return `
+                <div class="filter-item" style="flex-direction:column; align-items:stretch;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div class="filter-item-left" onclick="toggleFilter('${safeCat}')">
+                            <input type="checkbox" id="filter-${safeCat}" ${filters[cat] ? 'checked' : ''} style="cursor: pointer;" onclick="event.stopPropagation(); toggleFilter('${safeCat}')">
+                            <span style="font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px;" title="${safeCat}">${safeCat}</span>
+                        </div>
+                        <span class="filter-count">${categoryCounts[cat]}</span>
+                    </div>
+                    ${taskList}
+                </div>
+            `;
+        }).join('');
+    }
+
+    function toggleFilter(name) {
+        filters[name] = !filters[name];
+        const el = document.getElementById(`filter-${name}`);
+        if (el) el.checked = filters[name];
+        renderCalendarDashboard();
+    }
+
+    function toggleAllFilters(showAll) {
+        Object.keys(filters).forEach(name => {
+            filters[name] = showAll;
+            const el = document.getElementById(`filter-${name}`);
+            if (el) el.checked = showAll;
+        });
+        renderCalendarDashboard();
+    }
+
+    // --- TEMPLATE & CHIP DRAG AND DROP HANDLERS ---
+    function handleTemplateDragStart(e, templateId) {
+        const t = templates.find(temp => temp.id === templateId);
+        if (!t) return;
+        
+        draggedTemplate = t;
+        draggedTaskInstance = null; // new schedule, not dragging existing chip
+        
+        e.dataTransfer.setData('text/plain', t.task_name);
+        e.dataTransfer.effectAllowed = 'copy';
+        e.target.style.opacity = '0.4';
+        
+        // Highlight dates in red/green
+        highlightCalendarDaysForTask(t.task_name, t.target_interval, null);
+        
+        e.target.addEventListener('dragend', () => {
+            e.target.style.opacity = '1';
+            draggedTemplate = null;
+            clearCalendarHighlights();
+        }, { once: true });
+    }
+
+    function handleTaskChipDragStart(e, taskId) {
+        const task = allTasks.find(t => t.id === taskId);
+        if (!task) return;
+        
+        draggedTaskInstance = task;
+        // Search if we have a template config for color/duration details
+        draggedTemplate = templates.find(t => t.task_name === task.task_name && t.roster_type === currentRoster) || {
+            task_name: task.task_name,
+            color: task.color,
+            duration: 1,
+            target_interval: null,
+            abbreviation: task.abbreviation
+        };
+        
+        e.dataTransfer.setData('text/plain', task.task_name);
+        e.dataTransfer.effectAllowed = 'move';
+        e.target.style.opacity = '0.4';
+        
+        // Highlight dates (excluding the active group of this dragged task run)
+        highlightCalendarDaysForTask(task.task_name, draggedTemplate.target_interval, task);
+        
+        e.target.addEventListener('dragend', () => {
+            e.target.style.opacity = '1';
+            draggedTaskInstance = null;
+            draggedTemplate = null;
+            clearCalendarHighlights();
+        }, { once: true });
+    }
+
+    function handleTaskChipDoubleClick(e, taskId) {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        const task = allTasks.find(t => t.id === taskId);
+        if (!task) return;
+        
+        if (trackedTask === task.task_name) {
+            clearTracking();
+        } else {
+            trackedTask = task.task_name;
+            trackedTaskInstance = task;
+            
+            // Ensure the tracked task's category filter is enabled
+            const cat = getTaskCategory(task);
+            filters[cat] = true;
+            const el = document.getElementById(`filter-${cat}`);
+            if (el) el.checked = true;
+            
+            analyzeIntervals();
+            renderCalendarDashboard();
+            renderFiltersList();
+        }
+    }
+
+    async function checkStaffAssignments(taskId, mode) {
+        try {
+            const res = await fetch('/api/tasks/check-assignments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_id: taskId, mode: mode })
+            });
+            if (res.ok) {
+                const { assignments } = await res.json();
+                if (assignments && assignments.length > 0) {
+                    let warningMsg = "Warning: Staff allocations exist for this task on the following date(s):\n";
+                    assignments.forEach(a => {
+                        warningMsg += `- ${formatFriendlyDate(a.date)}: ${a.staff.join(', ')}\n`;
+                    });
+                    warningMsg += "\nProceeding will remove these staff allocations. Do you want to proceed?";
+                    return confirm(warningMsg);
+                }
+            }
+        } catch (err) {
+            console.error("Error checking staff assignments:", err);
+        }
+        return true; 
+    }
+
+    async function handleTaskMove(dateStr, taskInstance) {
+        if (!taskInstance) return;
+        
+        const hasGroup = !!taskInstance.group_id;
+        const mode = hasGroup ? 'all' : 'single_strict';
+
+        const proceed = await checkStaffAssignments(taskInstance.id, mode);
+        if (!proceed) return;
+        
+        try {
+            const res = await fetch('/api/tasks/move-annual', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    task_id: taskInstance.id,
+                    new_date: dateStr
+                })
+            });
+            
+            if (res.ok) {
+                showToast(`Moved "${taskInstance.task_name}" to ${formatFriendlyDate(dateStr)}`, "success");
+                loadAnnualData();
+            } else {
+                showToast("Failed to move task.", "error");
+            }
+        } catch (err) {
+            console.error(err);
+            showToast("Error moving task.", "error");
+        }
+    }
+
+    async function handleTaskDrop(dateStr, template) {
+        if (!template) return;
+        
+        const durationDays = template.duration;
+        const datesToSchedule = [];
+        const skipWeekends = true; 
+        
+        let currentDate = new Date(dateStr);
+        let scheduledCount = 0;
+
+        while (scheduledCount < durationDays) {
+            const dayOfWeek = currentDate.getDay();
+            const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+            
+            if (skipWeekends && isWeekend) {
+                currentDate.setDate(currentDate.getDate() + 1);
+                continue;
+            }
+
+            const year = currentDate.getFullYear();
+            const mm = String(currentDate.getMonth() + 1).padStart(2, '0');
+            const dd = String(currentDate.getDate()).padStart(2, '0');
+            const dateString = `${year}-${mm}-${dd}`;
+            
+            datesToSchedule.push(dateString);
+            currentDate.setDate(currentDate.getDate() + 1);
+            scheduledCount++;
+        }
+
+        try {
+            const tempGroupId = Date.now().toString() + Math.random().toString(36).substring(2, 7);
+
+            for (const d of datesToSchedule) {
+                await fetch('/api/tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: d,
+                        task_name: template.task_name,
+                        duration: 'All Day',
+                        color: template.color,
+                        rosterType: currentRoster,
+                        abbreviation: template.abbreviation,
+                        category: template.category,
+                        group_id: tempGroupId
+                    })
+                });
+            }
+
+            showToast(`Scheduled template "${template.task_name}" over ${durationDays} days starting on ${formatFriendlyDate(dateStr)}`, "success");
+            loadAnnualData();
+
+        } catch (err) {
+            console.error(err);
+            showToast("Error occurred scheduling template drop.", "error");
+        }
+    }
+
+    // Interval checker helper during dragover
+    function getSpacingDetails(targetDateStr, taskName, limit, excludeGroupId = null, excludeTaskId = null) {
+        const template = templates.find(t => t.task_name === taskName);
+        const linkedNames = [taskName];
+        if (template && template.linked_tasks) {
+            template.linked_tasks.split(',').forEach(n => {
+                if (n.trim()) linkedNames.push(n.trim());
+            });
+        }
+
+        let instances = allTasks.filter(t => linkedNames.includes(t.task_name));
+        if (excludeGroupId) {
+            instances = instances.filter(t => t.group_id !== excludeGroupId);
+        } else if (excludeTaskId) {
+            instances = instances.filter(t => t.id !== excludeTaskId);
+        }
+        
+        if (instances.length === 0) {
+            return { text: "First occurrence", isViolation: false };
+        }
+        
+        const runs = groupTaskRuns(instances);
+        if (runs.length === 0) {
+            return { text: "First occurrence", isViolation: false };
+        }
+        
+        const olderRuns = runs.filter(r => r.startDate < targetDateStr);
+        const futureRuns = runs.filter(r => r.startDate > targetDateStr);
+        
+        let prevWeeks = null;
+        let nextWeeks = null;
+        let prevViolation = false;
+        let nextViolation = false;
+        
+        if (olderRuns.length > 0) {
+            const latestRun = olderRuns[olderRuns.length - 1];
+            const prevDate = new Date(latestRun.startDate + 'T00:00:00');
+            const currDate = new Date(targetDateStr + 'T00:00:00');
+            const diffDays = Math.round((currDate - prevDate) / (1000 * 60 * 60 * 24));
+            prevWeeks = diffDays / 7;
+            if (prevWeeks > limit) prevViolation = true;
+        }
+        
+        if (futureRuns.length > 0) {
+            const earliestNextRun = futureRuns[0];
+            const nextDate = new Date(earliestNextRun.startDate + 'T00:00:00');
+            const currDate = new Date(targetDateStr + 'T00:00:00');
+            const diffDays = Math.round((nextDate - currDate) / (1000 * 60 * 60 * 24));
+            nextWeeks = diffDays / 7;
+            if (nextWeeks > limit) nextViolation = true;
+        }
+        
+        let textParts = [];
+        if (prevWeeks !== null) {
+            textParts.push(`${prevWeeks.toFixed(1)}w since last${prevViolation ? ` (> ${limit}w) ` : ''}`);
+        }
+        if (nextWeeks !== null) {
+            textParts.push(`${nextWeeks.toFixed(1)}w to next${nextViolation ? ` (> ${limit}w) ` : ''}`);
+        }
+        
+        if (textParts.length === 0) {
+            return { text: "First occurrence", isViolation: false };
+        }
+        
+        return {
+            text: textParts.join(" | "),
+            isViolation: prevViolation || nextViolation
+        };
+    }
+
+    function highlightCalendarDaysForTask(taskName, targetInterval, draggedTask = null) {
+        clearCalendarHighlights();
+        const template = templates.find(t => t.task_name === taskName);
+        const linkedNames = [taskName];
+        if (template && template.linked_tasks) {
+            template.linked_tasks.split(',').forEach(n => {
+                if (n.trim()) linkedNames.push(n.trim());
+            });
+        }
+
+        let instances = allTasks.filter(t => linkedNames.includes(t.task_name));
+        if (draggedTask) {
+            if (draggedTask.group_id) {
+                instances = instances.filter(t => t.group_id !== draggedTask.group_id);
+            } else {
+                instances = instances.filter(t => t.id !== draggedTask.id);
+            }
+        }
+        
+        const runs = groupTaskRuns(instances);
+        const limit = targetInterval || 6; 
+        
+        document.querySelectorAll('.day-cell[data-date]').forEach(dayCell => {
+            const dateStr = dayCell.getAttribute('data-date');
+            const olderRuns = runs.filter(r => r.startDate < dateStr);
+            const futureRuns = runs.filter(r => r.startDate > dateStr);
+            
+            let prevAcceptable = true;
+            let nextAcceptable = true;
+            
+            if (olderRuns.length > 0) {
+                const latestRun = olderRuns[olderRuns.length - 1];
+                const prevDate = new Date(latestRun.startDate + 'T00:00:00');
+                const currDate = new Date(dateStr + 'T00:00:00');
+                const diffDays = Math.round((currDate - prevDate) / (1000 * 60 * 60 * 24));
+                const weeks = diffDays / 7;
+                if (weeks > limit) prevAcceptable = false;
+            }
+            
+            if (futureRuns.length > 0) {
+                const earliestNextRun = futureRuns[0];
+                const nextDate = new Date(earliestNextRun.startDate + 'T00:00:00');
+                const currDate = new Date(dateStr + 'T00:00:00');
+                const diffDays = Math.round((nextDate - currDate) / (1000 * 60 * 60 * 24));
+                const weeks = diffDays / 7;
+                if (weeks > limit) nextAcceptable = false;
+            }
+            
+            if (prevAcceptable && nextAcceptable) {
+                dayCell.classList.add('drag-acceptable');
+            } else {
+                dayCell.classList.add('drag-violation');
+            }
+        });
+    }
+
+    function clearCalendarHighlights() {
+        document.querySelectorAll('.day-cell').forEach(cell => {
+            cell.classList.remove('drag-acceptable', 'drag-violation');
+        });
+    }
+
+    // --- CALENDAR GRID RENDERING ---
+    function renderCalendarDashboard() {
+        const container = document.getElementById('calendarDashboard');
+        container.innerHTML = '';
+        container.classList.toggle('single-month-view', currentViewMode === 'month');
+        container.classList.toggle('hide-weekends', !showWeekends);
+
+        const tasksByDate = {};
+        
+        // Build set of names for the tracked/inspected task and its linked tasks
+        const inspectedNames = new Set();
+        if (trackedTask) {
+            inspectedNames.add(trackedTask);
+            const template = templates.find(t => t.task_name === trackedTask);
+            if (template && template.linked_tasks) {
+                template.linked_tasks.split(',').forEach(n => {
+                    if (n.trim()) inspectedNames.add(n.trim());
+                });
+            }
+        }
+
+        allTasks.forEach(t => {
+            if (trackedTask) {
+                // If inspection is active, hide all other tasks
+                if (!inspectedNames.has(t.task_name)) return;
+            } else {
+                // Otherwise check standard category filters
+                if (!filters[getTaskCategory(t)]) return;
+            }
+
+            if (!tasksByDate[t.date]) {
+                tasksByDate[t.date] = [];
+            }
+            tasksByDate[t.date].push(t);
+        });
+
+        // Group runs of tracked task
+        let trackedOccurrencesSet = new Set();
+        let trackedConsecutiveSet = new Set();
+        let runStartIntervals = {}; // { startDateStr: { gapText, alertClass } }
+
+        if (trackedTask) {
+            const instances = allTasks.filter(t => t.task_name === trackedTask);
+            const trackedRuns = groupTaskRuns(instances);
+            const runsWithIntervals = getRunsWithIntervals(trackedRuns);
+            
+            runsWithIntervals.forEach(run => {
+                trackedOccurrencesSet.add(run.startDate);
+                
+                run.instances.forEach(inst => {
+                    trackedConsecutiveSet.add(inst.date);
+                });
+
+                if (run.intervalStr && run.intervalDays !== null) {
+                    runStartIntervals[run.startDate] = {
+                        text: `${(run.intervalDays / 7).toFixed(0)}w`,
+                        fullText: run.intervalStr,
+                        alertClass: run.alertClass
+                    };
+                }
+            });
+        }
+
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        // Determine months to render based on view mode
+        const today = new Date();
+        const currentSystemMonth = today.getMonth(); // 0-indexed
+        
+        let startMonth, startYear, renderCount;
+        
+        if (currentViewMode === 'month') {
+            startMonth = activeMonthIndex;
+            startYear = activeMonthYear;
+            renderCount = 1;
+        } else {
+            startMonth = currentSystemMonth - 1;
+            startYear = currentYear;
+            if (startMonth < 0) {
+                startMonth = 11;
+                startYear = currentYear - 1;
+            }
+            renderCount = 12;
+        }
+
+        // Render months
+        for (let i = 0; i < renderCount; i++) {
+            const month = (startMonth + i) % 12;
+            const year = startYear + Math.floor((startMonth + i) / 12);
+
+            const monthCard = document.createElement('div');
+            monthCard.className = 'month-card';
+
+            const nameEl = document.createElement('div');
+            nameEl.className = 'month-name';
+            nameEl.innerText = `${monthNames[month]} ${year}`;
+            
+            // Allow clicking month names in 12-month view to drill down to single month view
+            if (currentViewMode === 'year') {
+                nameEl.classList.add('clickable-month-name');
+                nameEl.title = `Click to view ${monthNames[month]} in detail`;
+                nameEl.onclick = () => {
+                    activeMonthIndex = month;
+                    activeMonthYear = year;
+                    
+                    // Sync year input
+                    document.getElementById('yearSelect').value = year;
+                    currentYear = year;
+                    
+                    switchView('month');
+                };
+            }
+            monthCard.appendChild(nameEl);
+
+            const daysHeader = document.createElement('div');
+            daysHeader.className = 'days-header';
+            if (showWeekends) {
+                daysHeader.innerHTML = '<div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div><div>S</div>';
+            } else {
+                daysHeader.innerHTML = '<div>M</div><div>T</div><div>W</div><div>T</div><div>F</div>';
+            }
+            monthCard.appendChild(daysHeader);
+
+            const daysGrid = document.createElement('div');
+            daysGrid.className = 'days-grid';
+
+            const firstDayIndex = new Date(year, month, 1).getDay();
+            let paddingOffset;
+            if (showWeekends) {
+                paddingOffset = (firstDayIndex + 6) % 7;
+            } else {
+                if (firstDayIndex === 0 || firstDayIndex === 6) {
+                    paddingOffset = 0;
+                } else {
+                    paddingOffset = firstDayIndex - 1;
+                }
+            }
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+            for (let p = 0; p < paddingOffset; p++) {
+                const paddingCell = document.createElement('div');
+                paddingCell.className = 'day-cell padding';
+                daysGrid.appendChild(paddingCell);
+            }
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                // Skip Saturday/Sunday if weekends are hidden
+                const dateObj = new Date(year, month, day);
+                const dayOfWeek = dateObj.getDay();
+                if (!showWeekends && (dayOfWeek === 0 || dayOfWeek === 6)) {
+                    continue;
+                }
+                const dayCell = document.createElement('div');
+                dayCell.className = 'day-cell';
+                
+                const mm = String(month + 1).padStart(2, '0');
+                const dd = String(day).padStart(2, '0');
+                const dateStr = `${year}-${mm}-${dd}`;
+
+                dayCell.setAttribute('data-date', dateStr);
+                dayCell.addEventListener('contextmenu', (e) => handleDayRightClick(e, dateStr));
+
+                const numEl = document.createElement('div');
+                numEl.className = 'day-number';
+                numEl.innerText = day;
+                dayCell.appendChild(numEl);
+
+                if (dateStr === todayStr) {
+                    dayCell.classList.add('today');
+                }
+
+                // Render tasks indicators
+                const dayTasks = tasksByDate[dateStr] || [];
+                if (dayTasks.length > 0) {
+                    const container = document.createElement('div');
+                    container.className = 'day-tasks-container';
+                    
+                    dayTasks.forEach(task => {
+                        const chip = document.createElement('div');
+                        chip.className = `mini-task-chip ${task.color}`;
+                        if (task.has_staff) {
+                            chip.className += ' has-staff-allocation';
+                        }
+                        
+                        // Prevent long names spillage: display abbreviation in 12 Months view; show full task name in Single Month view
+                        const displayName = (currentViewMode === 'month') 
+                            ? task.task_name 
+                            : (task.abbreviation || (task.task_name.length > 5 ? task.task_name.substring(0, 4) + '..' : task.task_name));
+                        chip.innerText = displayName;
+                        chip.title = `${task.task_name} (${task.duration}) - ${task.has_staff ? 'Staff Assigned' : 'No Staff Assigned'}. Drag to reschedule, Right-click for options`;
+                        
+                        // Draggable existing task chip
+                        chip.setAttribute('draggable', 'true');
+                        chip.addEventListener('dragstart', (e) => handleTaskChipDragStart(e, task.id));
+                        chip.addEventListener('contextmenu', (e) => handleTaskRightClick(e, task.id));
+                        chip.addEventListener('dblclick', (e) => handleTaskChipDoubleClick(e, task.id));
+                        
+                        container.appendChild(chip);
+                    });
+                    
+                    dayCell.appendChild(container);
+                }
+
+                if (trackedTask) {
+                    if (trackedOccurrencesSet.has(dateStr)) {
+                        dayCell.classList.add('tracked-occurrence');
+                        
+                        if (runStartIntervals[dateStr]) {
+                            const badge = document.createElement('div');
+                            badge.className = `interval-badge-container`;
+                            badge.innerText = runStartIntervals[dateStr].text;
+                            badge.title = runStartIntervals[dateStr].fullText;
+                            
+                            if (runStartIntervals[dateStr].alertClass === 'interval-warning') {
+                                badge.style.background = '#e53e3e';
+                            } else if (runStartIntervals[dateStr].alertClass === 'interval-short') {
+                                badge.style.background = '#38a169';
+                            }
+                            dayCell.appendChild(badge);
+                        }
+                    } else if (trackedConsecutiveSet.has(dateStr)) {
+                        dayCell.classList.add('tracked-consecutive');
+                    }
+                }
+
+                // Drag & Drop Listeners
+                dayCell.addEventListener('dragover', (e) => {
+                    if (draggedTemplate && e.dataTransfer.types.includes('text/plain')) {
+                        e.preventDefault();
+                        dayCell.classList.add('drag-over');
+                        
+                        const excludeId = draggedTaskInstance ? draggedTaskInstance.id : null;
+                        const excludeGroupId = draggedTaskInstance ? draggedTaskInstance.group_id : null;
+                        const limit = draggedTemplate.target_interval || 6;
+                        
+                        const spacing = getSpacingDetails(dateStr, draggedTemplate.task_name, limit, excludeGroupId, excludeId);
+                        
+                        let badge = dayCell.querySelector('.drag-spacing-badge');
+                        if (!badge) {
+                            badge = document.createElement('div');
+                            badge.className = 'drag-spacing-badge';
+                            dayCell.appendChild(badge);
+                        }
+                        
+                        badge.innerText = spacing.text;
+                        if (spacing.isViolation) {
+                            badge.style.background = 'var(--danger-color)';
+                            badge.style.boxShadow = '0 0 8px var(--danger-color)';
+                        } else {
+                            badge.style.background = spacing.text === "First occurrence" ? 'var(--accent-secondary)' : 'var(--success-color)';
+                            badge.style.boxShadow = 'none';
+                        }
+                    }
+                });
+
+                dayCell.addEventListener('dragleave', () => {
+                    dayCell.classList.remove('drag-over');
+                    const badge = dayCell.querySelector('.drag-spacing-badge');
+                    if (badge) badge.remove();
+                });
+
+                dayCell.addEventListener('drop', async (e) => {
+                    e.preventDefault();
+                    dayCell.classList.remove('drag-over');
+                    const badge = dayCell.querySelector('.drag-spacing-badge');
+                    if (badge) badge.remove();
+                    
+                    const template = draggedTemplate;
+                    const taskInstance = draggedTaskInstance;
+                    
+                    if (taskInstance) {
+                        await handleTaskMove(dateStr, taskInstance);
+                    } else if (template) {
+                        await handleTaskDrop(dateStr, template);
+                    }
+                });
+
+                dayCell.onclick = (e) => {
+                    if (e.target.closest('.mini-task-chip')) return;
+                    openDayModal(dateStr, dayTasks);
+                };
+
+                daysGrid.appendChild(dayCell);
+            }
+
+            monthCard.appendChild(daysGrid);
+            container.appendChild(monthCard);
+        }
+
+        if (trackedTask) {
+            const template = templates.find(t => t.task_name === trackedTask);
+            const limit = template ? template.target_interval : 6;
+            highlightCalendarDaysForTask(trackedTask, limit, trackedTaskInstance);
+        }
+    }
+
+    // --- DAY SCHEDULER MODAL ---
+    function openDayModal(dateStr, dayTasks) {
+        selectedDateStr = dateStr;
+        
+        const modal = document.getElementById('dayModal');
+        const title = document.getElementById('modalDayTitle');
+        title.innerText = `Schedule Rota tasks - ${formatFriendlyDate(dateStr)}`;
+
+        const list = document.getElementById('modalDayTasksList');
+        if (dayTasks.length === 0) {
+            list.innerHTML = `<div style="color: var(--text-muted); font-size: 13px; font-style: italic; padding: 10px 0;">No tasks scheduled on this day.</div>`;
+        } else {
+            list.innerHTML = dayTasks.map(t => `
+                <div class="day-task-item ${t.color}">
+                    <span class="day-task-name">${escapeHTML(t.task_name)} <span class="day-task-meta">(${t.duration})</span></span>
+                    <div class="day-task-actions" style="display: flex; gap: 8px;">
+                        <button onclick="editTaskFromDayModal(${t.id})" class="edit-icon-btn" title="Edit Event" style="background: none; border: none; cursor: pointer; font-size: 13px; padding: 0;">✏️</button>
+                        <button onclick="deleteTask(${t.id}, '${escapeHTML(t.task_name)}')" class="delete-icon-btn" title="Delete Task" style="background: none; border: none; cursor: pointer; font-size: 13px; padding: 0;">🗑️</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        document.getElementById('singleTaskName').value = '';
+        document.getElementById('singleTaskDuration').value = 'All Day';
+        document.getElementById('modalTemplateSelect').value = '';
+
+        modal.style.display = 'flex';
+    }
+
+    function closeDayModal() {
+        document.getElementById('dayModal').style.display = 'none';
+    }
+
+    function editTaskFromDayModal(taskId) {
+        closeDayModal();
+        openEditEventModal(taskId);
+    }
+
+    async function addSingleTask() {
+        const nameInput = document.getElementById('singleTaskName');
+        const durationSelect = document.getElementById('singleTaskDuration');
+
+        const task_name = nameInput.value.trim();
+        const duration = durationSelect.value;
+        const color = selectedSingleTaskColor;
+
+        if (!task_name) {
+            showToast("Please enter a task name.", "error");
+            return;
+        }
+
+        const category = document.getElementById('singleTaskCategory').value || null;
+
+        try {
+            const tempGroupId = Date.now().toString() + Math.random().toString(36).substring(2, 7);
+
+            const res = await fetch('/api/tasks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    date: selectedDateStr,
+                    task_name: task_name,
+                    duration: duration,
+                    color: color,
+                    rosterType: currentRoster,
+                    group_id: tempGroupId,
+                    category: category
+                })
+            });
+
+            if (res.ok) {
+                showToast("Daily task added successfully.", "success");
+                closeDayModal();
+                loadAnnualData();
+            } else {
+                showToast("Failed to add task.", "error");
+            }
+        } catch (err) {
+            console.error(err);
+            showToast("Network error adding task.", "error");
+        }
+    }
+
+    async function applyTemplateAtDate() {
+        const select = document.getElementById('modalTemplateSelect');
+        const templateId = parseInt(select.value);
+        const skipWeekends = document.getElementById('modalSkipWeekends').checked;
+
+        if (!templateId) {
+            showToast("Please select a template.", "error");
+            return;
+        }
+
+        const template = templates.find(t => t.id === templateId);
+        if (!template) return;
+
+        const durationDays = template.duration;
+        const datesToSchedule = [];
+        
+        let currentDate = new Date(selectedDateStr);
+        let scheduledCount = 0;
+
+        while (scheduledCount < durationDays) {
+            const dayOfWeek = currentDate.getDay();
+            const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+            
+            if (skipWeekends && isWeekend) {
+                currentDate.setDate(currentDate.getDate() + 1);
+                continue;
+            }
+
+            const year = currentDate.getFullYear();
+            const mm = String(currentDate.getMonth() + 1).padStart(2, '0');
+            const dd = String(currentDate.getDate()).padStart(2, '0');
+            const dateStr = `${year}-${mm}-${dd}`;
+            
+            datesToSchedule.push(dateStr);
+            currentDate.setDate(currentDate.getDate() + 1);
+            scheduledCount++;
+        }
+
+        try {
+            const tempGroupId = Date.now().toString() + Math.random().toString(36).substring(2, 7);
+
+            for (const d of datesToSchedule) {
+                await fetch('/api/tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: d,
+                        task_name: template.task_name,
+                        duration: 'All Day',
+                        color: template.color,
+                        rosterType: currentRoster,
+                        abbreviation: template.abbreviation,
+                        category: template.category,
+                        group_id: tempGroupId
+                    })
+                });
+            }
+
+            showToast(`Template "${template.task_name}" applied successfully over ${durationDays} scheduled days.`, "success");
+            closeDayModal();
+            loadAnnualData();
+
+        } catch (err) {
+            console.error(err);
+            showToast("Error occurred applying template.", "error");
+        }
+    }
+
+    async function deleteTask(id, taskName) {
+        const task = allTasks.find(t => t.id === id);
+        if (!task) return;
+        
+        const hasGroup = !!task.group_id;
+        const message = hasGroup ? `Delete all scheduled days for this "${taskName}" event?` : `Delete this instance of "${taskName}"?`;
+        if (!confirm(message)) return;
+
+        const mode = hasGroup ? 'all' : 'single_strict';
+        
+        const proceed = await checkStaffAssignments(id, mode);
+        if (!proceed) return;
+
+        try {
+            const res = await fetch(`/api/tasks/${id}?mode=${mode}`, { method: 'DELETE' });
+            if (res.ok) {
+                showToast(hasGroup ? "Event deleted successfully." : "Task instance deleted.", "success");
+                closeDayModal();
+                loadAnnualData();
+            } else {
+                showToast("Failed to delete.", "error");
+            }
+        } catch (err) {
+            console.error(err);
+            showToast("Network error deleting task.", "error");
+        }
+    }
+
+    // --- RIGHT-CLICK CONTEXT MENU WORKFLOW ---
+    let activeContextMenuDateStr = null;
+
+    function handleTaskRightClick(e, taskId) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        activeContextMenuTaskId = taskId;
+        activeContextMenuDateStr = null;
+        
+        const menu = document.getElementById('customContextMenu');
+        document.getElementById('taskContextItems').style.display = 'block';
+        document.getElementById('dayContextItems').style.display = 'none';
+        menu.style.display = 'block';
+        
+        const viewWidth = window.innerWidth;
+        const viewHeight = window.innerHeight;
+        let left = e.clientX;
+        let top = e.clientY;
+        
+        if (left + 180 > viewWidth) left = viewWidth - 190;
+        if (top + 150 > viewHeight) top = viewHeight - 160;
+        
+        menu.style.left = `${left}px`;
+        menu.style.top = `${top}px`;
+        
+        document.addEventListener('click', closeContextMenu);
+    }
+
+    function handleDayRightClick(e, dateStr) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        activeContextMenuDateStr = dateStr;
+        activeContextMenuTaskId = null;
+        
+        const menu = document.getElementById('customContextMenu');
+        document.getElementById('taskContextItems').style.display = 'none';
+        document.getElementById('dayContextItems').style.display = 'block';
+        
+        // Populate the templates list inside the context menu dynamically, nested by category!
+        const listContainer = document.getElementById('dayContextMenuTemplatesList');
+        if (templates.length === 0) {
+            listContainer.innerHTML = '<div class="context-menu-item" style="color: var(--text-muted); font-style: italic; font-size: 11px; cursor: default; padding: 6px 12px;">No templates saved</div>';
+        } else {
+            const categories = {};
+            templates.forEach(t => {
+                const cat = t.category || "Other";
+                if (!categories[cat]) categories[cat] = [];
+                categories[cat].push(t);
+            });
+            
+            let html = '';
+            // Order the categories logically or alphabetically
+            const catKeys = Object.keys(categories).sort();
+            catKeys.forEach(cat => {
+                const list = categories[cat];
+                if (list.length > 0) {
+                    html += `
+                        <div class="context-menu-item" style="cursor: default;">
+                            <span>📂 ${escapeHTML(cat)}</span>
+                            <span style="font-size: 10px; color: var(--text-muted);">➔</span>
+                            <div class="context-submenu">
+                                ${list.map(t => `
+                                    <div class="context-menu-item" onclick="addTemplateDirectly(${t.id})">
+                                        ⚡ ${escapeHTML(t.task_name)} (${t.duration}d)
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+            });
+            listContainer.innerHTML = html;
+        }
+        
+        menu.style.display = 'block';
+        
+        const viewWidth = window.innerWidth;
+        const viewHeight = window.innerHeight;
+        let left = e.clientX;
+        let top = e.clientY;
+        
+        if (left + 400 > viewWidth) left = viewWidth - 410;
+        if (top + 200 > viewHeight) top = viewHeight - 210;
+        
+        menu.style.left = `${left}px`;
+        menu.style.top = `${top}px`;
+        
+        document.addEventListener('click', closeContextMenu);
+    }
+
+    function closeContextMenu() {
+        const menu = document.getElementById('customContextMenu');
+        menu.style.display = 'none';
+        document.removeEventListener('click', closeContextMenu);
+    }
+
+    async function addTemplateDirectly(templateId) {
+        if (!activeContextMenuDateStr) return;
+        closeContextMenu();
+
+        const template = templates.find(t => t.id === templateId);
+        if (!template) return;
+
+        const limit = template.target_interval || 6;
+        
+        // Perform the interval rules check!
+        const spacing = getSpacingDetails(activeContextMenuDateStr, template.task_name, limit);
+        if (spacing.isViolation) {
+            const warnMsg = `Warning: Spacing interval rules are broken for "${template.task_name}" at this position!\nSpacing details: ${spacing.text}\n\nDo you wish to proceed?`;
+            if (!confirm(warnMsg)) {
+                return;
+            }
+        }
+
+        // Add the tasks! By default, we skip weekends (matching the default template drop behavior)
+        const skipWeekends = true; 
+        const durationDays = template.duration;
+        const datesToSchedule = [];
+        
+        let currentDate = new Date(activeContextMenuDateStr);
+        let scheduledCount = 0;
+
+        while (scheduledCount < durationDays) {
+            const dayOfWeek = currentDate.getDay();
+            const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+            
+            if (skipWeekends && isWeekend) {
+                currentDate.setDate(currentDate.getDate() + 1);
+                continue;
+            }
+
+            const year = currentDate.getFullYear();
+            const mm = String(currentDate.getMonth() + 1).padStart(2, '0');
+            const dd = String(currentDate.getDate()).padStart(2, '0');
+            const dateStr = `${year}-${mm}-${dd}`;
+            
+            datesToSchedule.push(dateStr);
+            currentDate.setDate(currentDate.getDate() + 1);
+            scheduledCount++;
+        }
+
+        try {
+            const tempGroupId = Date.now().toString() + Math.random().toString(36).substring(2, 7);
+
+            for (const d of datesToSchedule) {
+                await fetch('/api/tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: d,
+                        task_name: template.task_name,
+                        duration: 'All Day',
+                        color: template.color,
+                        rosterType: currentRoster,
+                        abbreviation: template.abbreviation,
+                        category: template.category,
+                        group_id: tempGroupId
+                    })
+                });
+            }
+
+            showToast(`Template "${template.task_name}" applied successfully over ${durationDays} days.`, "success");
+            loadAnnualData();
+
+        } catch (err) {
+            console.error(err);
+            showToast("Error occurred applying template.", "error");
+        }
+    }
+
+    function triggerContextInspect() {
+        if (!activeContextMenuTaskId) return;
+        const task = allTasks.find(t => t.id === activeContextMenuTaskId);
+        if (task) {
+            trackedTaskInstance = task;
+            toggleTracking(task.task_name);
+        }
+        closeContextMenu();
+    }
+
+    let editingEventTaskId = null;
+    let selectedEditEventColor = 'color-1';
+
+    function populateEditEventColorSelector() {
+        const selector = document.getElementById('editEventColorSelector');
+        selector.innerHTML = '';
+        for (let i = 1; i <= 6; i++) {
+            const colorClass = `color-${i}`;
+            const dot = document.createElement('div');
+            dot.className = `color-dot ${colorClass}`;
+            dot.setAttribute('data-color', colorClass);
+            dot.onclick = () => {
+                selectedEditEventColor = colorClass;
+                document.querySelectorAll('#editEventColorSelector .color-dot').forEach(d => {
+                    d.classList.toggle('selected', d.getAttribute('data-color') === colorClass);
+                });
+            };
+            selector.appendChild(dot);
+        }
+    }
+
+    function openEditEventModal(taskId) {
+        const task = allTasks.find(t => t.id === taskId);
+        if (!task) return;
+
+        editingEventTaskId = taskId;
+        populateEditEventColorSelector();
+
+        document.getElementById('editEventName').value = task.task_name || '';
+        document.getElementById('editEventAbbreviation').value = task.abbreviation || '';
+        document.getElementById('editEventCategory').value = task.category || '';
+
+        // Select the color
+        selectedEditEventColor = task.color || 'color-1';
+        document.querySelectorAll('#editEventColorSelector .color-dot').forEach(d => {
+            d.classList.toggle('selected', d.getAttribute('data-color') === selectedEditEventColor);
+        });
+
+        // Set title context (e.g. grouped event or single day)
+        const titleEl = document.getElementById('editEventModalTitle');
+        if (task.group_id) {
+            titleEl.innerText = `Edit Event Run (${task.task_name})`;
+        } else {
+            titleEl.innerText = `Edit Task Instance (${task.task_name})`;
+        }
+
+        document.getElementById('editEventModal').style.display = 'flex';
+    }
+
+    function closeEditEventModal() {
+        document.getElementById('editEventModal').style.display = 'none';
+        editingEventTaskId = null;
+    }
+
+    async function saveEventEdit() {
+        if (!editingEventTaskId) return;
+
+        const nameVal = document.getElementById('editEventName').value.trim();
+        const abbrVal = document.getElementById('editEventAbbreviation').value.trim() || null;
+        const catVal = document.getElementById('editEventCategory').value || null;
+        const colorVal = selectedEditEventColor;
+
+        if (!nameVal) {
+            showToast("Task Name cannot be empty.", "error");
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/tasks/edit-event', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    task_id: editingEventTaskId,
+                    task_name: nameVal,
+                    abbreviation: abbrVal,
+                    category: catVal,
+                    color: colorVal
+                })
+            });
+
+            if (res.ok) {
+                showToast("Event updated successfully.", "success");
+                closeEditEventModal();
+                loadAnnualData();
+            } else {
+                showToast("Failed to update event.", "error");
+            }
+        } catch (err) {
+            console.error(err);
+            showToast("Network error updating event.", "error");
+        }
+    }
+
+    async function triggerContextEdit() {
+        if (!activeContextMenuTaskId) return;
+        closeContextMenu();
+        openEditEventModal(activeContextMenuTaskId);
+    }
+
+    async function triggerContextDelete() {
+        if (!activeContextMenuTaskId) return;
+        const task = allTasks.find(t => t.id === activeContextMenuTaskId);
+        if (!task) return;
+
+        const hasGroup = !!task.group_id;
+        const message = hasGroup ? `Delete all scheduled days for this "${task.task_name}" event?` : `Delete this instance of "${task.task_name}" on ${formatFriendlyDate(task.date)}?`;
+        if (!confirm(message)) return;
+
+        const mode = hasGroup ? 'all' : 'single_strict';
+        
+        const proceed = await checkStaffAssignments(task.id, mode);
+        if (!proceed) return;
+
+        try {
+            const res = await fetch(`/api/tasks/${task.id}?mode=${mode}`, { method: 'DELETE' });
+            if (res.ok) {
+                showToast(hasGroup ? "Event deleted successfully." : "Task instance deleted.", "success");
+                loadAnnualData();
+            } else {
+                showToast("Failed to delete.", "error");
+            }
+        } catch (err) {
+            console.error(err);
+            showToast("Network error deleting task.", "error");
+        }
+        closeContextMenu();
+    }
+
+    // --- INTERVAL ANALYSIS & TRACKING ---
+    function toggleTracking(taskName) {
+        if (trackedTask === taskName) {
+            clearTracking();
+        } else {
+            trackedTask = taskName;
+            
+            // Ensure the tracked task's category filter is enabled
+            const trackedTaskObj = allTasks.find(t => t.task_name === taskName);
+            if (trackedTaskObj) {
+                const cat = getTaskCategory(trackedTaskObj);
+                filters[cat] = true;
+                const el = document.getElementById(`filter-${cat}`);
+                if (el) el.checked = true;
+            }
+
+            analyzeIntervals();
+            renderCalendarDashboard();
+            renderFiltersList();
+        }
+    }
+
+    function clearTracking() {
+        trackedTask = null;
+        trackedTaskInstance = null;
+        document.getElementById('intervalStatsPanel').style.display = 'none';
+        clearCalendarHighlights();
+        renderCalendarDashboard();
+        renderFiltersList();
+    }
+
+    function analyzeIntervals() {
+        const template = templates.find(t => t.task_name === trackedTask);
+        const linkedNames = [trackedTask];
+        if (template && template.linked_tasks) {
+            template.linked_tasks.split(',').forEach(n => {
+                if (n.trim()) linkedNames.push(n.trim());
+            });
+        }
+
+        const instances = allTasks.filter(t => linkedNames.includes(t.task_name));
+        const runs = groupTaskRuns(instances);
+        const runsWithIntervals = getRunsWithIntervals(runs);
+
+        document.getElementById('trackedTaskName').innerText = trackedTask;
+        const panel = document.getElementById('intervalStatsPanel');
+        const container = document.getElementById('intervalListContainer');
+
+        if (runsWithIntervals.length === 0) {
+            container.innerHTML = `<div style="color: var(--text-muted); font-size: 13px; font-style: italic;">No occurrences scheduled.</div>`;
+            document.getElementById('statsMinVal').innerText = '--';
+            document.getElementById('statsAvgVal').innerText = '--';
+            document.getElementById('statsMaxVal').innerText = '--';
+            panel.style.display = 'block';
+            return;
+        }
+
+        container.innerHTML = runsWithIntervals.map((run, i) => {
+            let alertColorClass = '';
+            if (run.alertClass === 'interval-warning') alertColorClass = 'interval-warning';
+            if (run.alertClass === 'interval-short') alertColorClass = 'interval-short';
+            
+            return `
+                <div class="interval-card">
+                    <div class="interval-card-header">Run #${i + 1}</div>
+                    <div><strong>Start:</strong> ${formatFriendlyDate(run.startDate)}</div>
+                    <div><strong>Duration:</strong> ${run.durationDays} ${run.durationDays === 1 ? 'day' : 'days'}</div>
+                    <div class="interval-gap ${alertColorClass}">
+                        <strong>Spacing:</strong><br>${run.intervalStr}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        panel.style.display = 'block';
+
+        // Calculate numeric gaps in weeks for chart & statistics
+        const gaps = runsWithIntervals.filter(r => r.intervalDays !== null).map(r => r.intervalDays / 7);
+        const limit = template ? template.target_interval : 6;
+        
+        // Draw the visual distribution Boxplot and Jitter plot
+        setTimeout(() => drawIntervalStatsChart(gaps, limit), 0);
+    }
+
+    function drawIntervalStatsChart(gaps, limit) {
+        const canvas = document.getElementById('intervalChartCanvas');
+        if (!canvas) return;
+
+        // Support high DPI displays
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+
+        const ctx = canvas.getContext('2d');
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, rect.width, rect.height);
+
+        if (gaps.length === 0) {
+            // Draw placeholder message
+            ctx.fillStyle = '#888888';
+            ctx.font = '12px Outfit, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('Not enough data points to plot distribution', rect.width / 2, rect.height / 2);
+            
+            document.getElementById('statsMinVal').innerText = '--';
+            document.getElementById('statsAvgVal').innerText = '--';
+            document.getElementById('statsMaxVal').innerText = '--';
+            return;
+        }
+
+        // Calculate statistics
+        const sorted = [...gaps].sort((a, b) => a - b);
+        const minVal = sorted[0];
+        const maxVal = sorted[sorted.length - 1];
+        
+        const sum = gaps.reduce((acc, v) => acc + v, 0);
+        const avgVal = sum / gaps.length;
+
+        // Quartile percentiles
+        const getPercentile = (arr, p) => {
+            const index = (arr.length - 1) * p;
+            const lower = Math.floor(index);
+            const upper = Math.ceil(index);
+            const weight = index - lower;
+            return arr[lower] * (1 - weight) + arr[upper] * weight;
+        };
+
+        const q1 = getPercentile(sorted, 0.25);
+        const median = getPercentile(sorted, 0.5);
+        const q3 = getPercentile(sorted, 0.75);
+
+        // Update HTML stats values
+        document.getElementById('statsMinVal').innerText = `${minVal.toFixed(1)}w`;
+        document.getElementById('statsAvgVal').innerText = `${avgVal.toFixed(1)}w`;
+        document.getElementById('statsMaxVal').innerText = `${maxVal.toFixed(1)}w`;
+
+        // Render visual chart: Boxplot + Jitter Points
+        const marginL = 30;
+        const marginR = 30;
+        const chartW = rect.width - marginL - marginR;
+        
+        // Define axis boundaries
+        const axisMin = 0;
+        const axisMax = Math.max(maxVal * 1.15, (limit || 6) + 2);
+
+        const valToX = (val) => {
+            const pct = (val - axisMin) / (axisMax - axisMin);
+            return marginL + pct * chartW;
+        };
+
+        const centerY = 30;
+
+        // Draw horizontal grid line
+        ctx.strokeStyle = 'var(--border-color)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(marginL, centerY);
+        ctx.lineTo(rect.width - marginR, centerY);
+        ctx.stroke();
+
+        // Draw Limit Threshold Line in Red
+        if (limit) {
+            const limitX = valToX(limit);
+            ctx.strokeStyle = '#e53e3e';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(limitX, 5);
+            ctx.lineTo(limitX, centerY + 20);
+            ctx.stroke();
+            ctx.setLineDash([]); // Reset line dash
+
+            ctx.fillStyle = '#e53e3e';
+            ctx.font = 'bold 9px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(`Limit (${limit}w)`, limitX, 10);
+        }
+
+        // Draw Box plot (Q1 to Q3)
+        const boxX1 = valToX(q1);
+        const boxX2 = valToX(q3);
+        const boxY = centerY - 12;
+        const boxH = 24;
+
+        ctx.fillStyle = 'rgba(74, 85, 104, 0.15)'; // Slate opacity
+        ctx.strokeStyle = '#4a5568';
+        ctx.lineWidth = 1.5;
+        ctx.fillRect(boxX1, boxY, boxX2 - boxX1, boxH);
+        ctx.strokeRect(boxX1, boxY, boxX2 - boxX1, boxH);
+
+        // Draw Median Line
+        const medianX = valToX(median);
+        ctx.strokeStyle = '#2b6cb0'; // Accent Blue
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(medianX, boxY);
+        ctx.lineTo(medianX, boxY + boxH);
+        ctx.stroke();
+
+        // Draw whiskers (Min to Q1, Q3 to Max)
+        ctx.strokeStyle = '#4a5568';
+        ctx.lineWidth = 1.5;
+        // Min whisker
+        const minX = valToX(minVal);
+        ctx.beginPath();
+        ctx.moveTo(minX, centerY - 6);
+        ctx.lineTo(minX, centerY + 6);
+        ctx.moveTo(minX, centerY);
+        ctx.lineTo(boxX1, centerY);
+        ctx.stroke();
+
+        // Max whisker
+        const maxX = valToX(maxVal);
+        ctx.beginPath();
+        ctx.moveTo(maxX, centerY - 6);
+        ctx.lineTo(maxX, centerY + 6);
+        ctx.moveTo(boxX2, centerY);
+        ctx.lineTo(maxX, centerY);
+        ctx.stroke();
+
+        // Plot individual data points with jitter
+        gaps.forEach((val, i) => {
+            const x = valToX(val);
+            const jitterY = centerY + (Math.sin(i * 1.7) * 8);
+
+            ctx.beginPath();
+            ctx.arc(x, jitterY, 4, 0, Math.PI * 2);
+            ctx.fillStyle = val > (limit || 6) ? '#e53e3e' : '#319795'; // Red if violation, Teal if acceptable
+            ctx.fill();
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+        });
+
+        // Draw Axis ticks
+        ctx.fillStyle = 'var(--text-color)';
+        ctx.font = '9px Outfit, sans-serif';
+        ctx.textAlign = 'center';
+        
+        const tickStep = axisMax > 24 ? 4 : 2;
+        for (let t = 0; t <= axisMax; t += tickStep) {
+            const x = valToX(t);
+            ctx.fillText(`${t}w`, x, centerY + 28);
+        }
+    }
+
+    function groupTaskRuns(taskInstances) {
+        if (taskInstances.length === 0) return [];
+        
+        const sorted = [...taskInstances].sort((a, b) => a.date.localeCompare(b.date));
+        
+        const runs = [];
+        let currentRun = [sorted[0]];
+        
+        for (let i = 1; i < sorted.length; i++) {
+            const prev = sorted[i - 1];
+            const curr = sorted[i];
+            
+            const prevDate = new Date(prev.date);
+            const currDate = new Date(curr.date);
+            const diffDays = Math.round((currDate - prevDate) / (1000 * 60 * 60 * 24));
+            
+            let isConsecutive = false;
+            if (diffDays === 1) {
+                isConsecutive = true;
+            } else if (diffDays <= 3) {
+                const prevDayOfWeek = prevDate.getDay(); 
+                if (prevDayOfWeek === 5 && diffDays <= 3) {
+                    isConsecutive = true;
+                } else if (prevDayOfWeek === 6 && diffDays <= 2) {
+                    isConsecutive = true;
+                }
+            }
+            
+            if (isConsecutive) {
+                currentRun.push(curr);
+            } else {
+                runs.push(currentRun);
+                currentRun = [curr];
+            }
+        }
+        runs.push(currentRun);
+        
+        return runs.map(run => {
+            const startTask = run[0];
+            const endTask = run[run.length - 1];
+            return {
+                task_name: startTask.task_name,
+                startDate: startTask.date,
+                endDate: endTask.date,
+                durationDays: run.length,
+                color: startTask.color,
+                instances: run
+            };
+        });
+    }
+
+    function getRunsWithIntervals(runs) {
+        const runsWithIntervals = [];
+        for (let i = 0; i < runs.length; i++) {
+            const current = runs[i];
+            let intervalStr = "First occurrence";
+            let intervalDays = null;
+            let alertClass = "";
+            
+            if (i > 0) {
+                const prev = runs[i - 1];
+                const diffTime = Math.abs(new Date(current.startDate) - new Date(prev.startDate));
+                intervalDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+                const weeks = (intervalDays / 7).toFixed(1);
+                intervalStr = `${weeks} weeks (${intervalDays} days)`;
+                
+                const matchedTemplate = templates.find(t => t.task_name === current.task_name);
+                const limit = matchedTemplate ? matchedTemplate.target_interval : null;
+                
+                if (limit) {
+                    if (intervalDays > limit * 7) {
+                        alertClass = 'interval-warning'; 
+                    } else {
+                        alertClass = 'interval-normal';
+                    }
+                } else {
+                    if (intervalDays > 45) {
+                        alertClass = 'interval-warning';
+                    } else if (intervalDays < 25) {
+                        alertClass = 'interval-short';
+                    } else {
+                        alertClass = 'interval-normal';
+                    }
+                }
+            }
+            
+            runsWithIntervals.push({
+                ...current,
+                intervalDays,
+                intervalStr,
+                alertClass
+            });
+        }
+        return runsWithIntervals;
+    }
+
+    // --- HELPERS ---
+    function renderColorDots(containerId, stateVarName) {
+        const container = document.getElementById(containerId);
+        container.innerHTML = colorsList.map(c => `
+            <div class="color-dot ${c} ${c === 'color-1' ? 'selected' : ''}" data-color="${c}" onclick="selectColor(this, '${containerId}', '${stateVarName}')"></div>
+        `).join('');
+    }
+
+    function selectColor(el, containerId, stateVarName) {
+        document.querySelectorAll(`#${containerId} .color-dot`).forEach(dot => {
+            dot.classList.remove('selected');
+        });
+        el.classList.add('selected');
+        
+        const color = el.getAttribute('data-color');
+        if (stateVarName === 'selectedTemplateColor') selectedTemplateColor = color;
+        if (stateVarName === 'selectedSingleTaskColor') selectedSingleTaskColor = color;
+    }
+
+    function formatFriendlyDate(dateStr) {
+        const d = new Date(dateStr);
+        const options = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' };
+        const parts = dateStr.split('-');
+        const localDate = new Date(parts[0], parts[1] - 1, parts[2]);
+        return localDate.toLocaleDateString('en-GB', options);
+    }
+
+    function escapeHTML(str) {
+        return str
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    function showToast(message, type = "success") {
+        const toast = document.getElementById('toast');
+        toast.innerText = message;
+        toast.className = `toast ${type}`;
+        toast.style.display = 'block';
+        
+        setTimeout(() => {
+            toast.style.display = 'none';
+        }, 3500);
+    }
+</script>
+
+</body>
+</html>
