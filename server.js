@@ -56,6 +56,22 @@ app.post('/api/admin/update-index', uploadIndex.single('indexfile'), (req, res) 
     res.json({ success: true });
 });
 
+// Configure multer for annual.html replacement
+const annualStorage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, path.join(__dirname, 'public'));
+    },
+    filename: function (req, file, cb) {
+        cb(null, 'annual.html');
+    }
+});
+const uploadAnnual = multer({ storage: annualStorage });
+
+app.post('/api/admin/update-annual', uploadAnnual.single('annualfile'), (req, res) => {
+    if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded.' });
+    res.json({ success: true });
+});
+
 function initDatabase() {
 // --- DATABASE LAYER ---
 db.exec(`
@@ -142,6 +158,37 @@ try { db.exec("ALTER TABLE task_templates ADD COLUMN linked_tasks TEXT DEFAULT N
 try { db.exec("ALTER TABLE daily_tasks ADD COLUMN notes TEXT DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE task_templates ADD COLUMN notes TEXT DEFAULT NULL"); } catch(e) {}
 try { db.exec("UPDATE task_templates SET roster_type = 'QA' WHERE roster_type IS NULL OR roster_type = ''"); } catch(e) {}
+
+// Initialize roster_categories table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS roster_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    roster_type TEXT NOT NULL,
+    category_name TEXT NOT NULL,
+    UNIQUE(roster_type, category_name)
+  );
+`);
+
+try {
+    const catCount = db.prepare("SELECT COUNT(*) as count FROM roster_categories").get().count;
+    if (catCount === 0) {
+        const stmt = db.prepare("INSERT INTO roster_categories (roster_type, category_name) VALUES (?, ?)");
+        const defaults = {
+            'QA': ['Monthly Linac QA', 'CT QA', 'Scheduled Service', 'Unscheduled Service'],
+            'Planning': ['Treatment Planning', 'Plan Review', 'Peer Review', 'Planning Audit'],
+            'Stereo': ['SRS Planning', 'SBRT Planning', 'SRS Delivery', 'SBRT Delivery'],
+            'Brachy': ['HDR Treatment', 'LDR Treatment', 'Source Calibration', 'Brachy Audit']
+        };
+        for (const [roster, cats] of Object.entries(defaults)) {
+            for (const cat of cats) {
+                stmt.run(roster, cat);
+            }
+        }
+        console.log("--> Prepopulated default roster categories.");
+    }
+} catch (err) {
+    console.error("Failed to prepopulate default roster categories:", err);
+}
 
 // --- AUTOMATIC SCHEMA MIGRATION ---
 try {
@@ -987,7 +1034,7 @@ app.get('/api/database/export/tasks', (req, res) => {
         const allUniqueTasks = tempDb.prepare(`
             WITH ranked_tasks AS (
                 SELECT
-                    id, date, task_name, duration, color, group_id, roster_type, display_order, priority,
+                    id, date, task_name, duration, color, group_id, roster_type, display_order, priority, abbreviation, category, notes,
                     ROW_NUMBER() OVER (
                         PARTITION BY date, task_name, roster_type
                         ORDER BY
@@ -997,15 +1044,15 @@ app.get('/api/database/export/tasks', (req, res) => {
                             id DESC
                     ) as rn
                 FROM (
-                    SELECT id, date, task_name, duration, color, group_id, roster_type, display_order, 1 as priority FROM daily_tasks
+                    SELECT id, date, task_name, duration, color, group_id, roster_type, display_order, 1 as priority, abbreviation, category, notes FROM daily_tasks
                     UNION ALL
-                    SELECT st.id, re.date, st.task_name, st.duration, st.color, st.group_id, re.roster_type, 0 as display_order, 2 as priority
+                    SELECT st.id, re.date, st.task_name, st.duration, st.color, st.group_id, re.roster_type, 0 as display_order, 2 as priority, NULL as abbreviation, NULL as category, NULL as notes
                     FROM shift_tasks st
                     JOIN roster_entries re ON st.entry_id = re.id
                 )
                 ${dateFilter}
             )
-            SELECT date, task_name, duration, color, group_id, roster_type, display_order
+            SELECT date, task_name, duration, color, group_id, roster_type, display_order, abbreviation, category, notes
             FROM ranked_tasks
             WHERE rn = 1
             ORDER BY date ASC, display_order ASC, priority ASC, id ASC
@@ -1014,9 +1061,9 @@ app.get('/api/database/export/tasks', (req, res) => {
         tempDb.exec('DELETE FROM daily_tasks;');
         
         if (allUniqueTasks.length > 0) {
-            const insertTask = tempDb.prepare(`INSERT INTO daily_tasks (date, task_name, duration, color, group_id, roster_type, display_order) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+            const insertTask = tempDb.prepare(`INSERT INTO daily_tasks (date, task_name, duration, color, group_id, roster_type, display_order, abbreviation, category, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
             allUniqueTasks.forEach(t => {
-                insertTask.run(t.date, t.task_name, t.duration, t.color, t.group_id, t.roster_type || rosterType, t.display_order !== null ? t.display_order : 0);
+                insertTask.run(t.date, t.task_name, t.duration, t.color, t.group_id, t.roster_type || rosterType, t.display_order !== null ? t.display_order : 0, t.abbreviation, t.category, t.notes);
             });
         }
 
@@ -1090,6 +1137,21 @@ app.post('/api/database/import', upload.single('database'), (req, res) => {
                 }
             } catch (err) {
                 console.error("Failed to import task templates:", err);
+            }
+
+            // Import roster categories if table exists in uploaded database
+            try {
+                const hasCategoriesTable = uploadedDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='roster_categories'").get();
+                if (hasCategoriesTable) {
+                    db.prepare('DELETE FROM roster_categories WHERE roster_type = ?').run(rosterType);
+                    const importCats = uploadedDb.prepare('SELECT * FROM roster_categories WHERE roster_type = ?').all(rosterType);
+                    const insertCat = db.prepare('INSERT INTO roster_categories (roster_type, category_name) VALUES (?, ?)');
+                    for (const c of importCats) {
+                        insertCat.run(c.roster_type, c.category_name);
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to import roster categories:", err);
             }
 
             db.prepare('DELETE FROM shift_tasks WHERE entry_id IN (SELECT id FROM roster_entries WHERE roster_type IN (?, \'Universal\'))').run(rosterType);
@@ -1190,10 +1252,29 @@ app.post('/api/database/import/tasks', upload.single('database'), (req, res) => 
     
     try {
         const uploadedDb = new Database(req.file.path);
+        
+        // Ensure imported daily_tasks table has abbreviation, category, and notes columns
+        try {
+            const schema = uploadedDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='daily_tasks'").get();
+            if (schema) {
+                if (!schema.sql.includes('abbreviation')) {
+                    uploadedDb.exec("ALTER TABLE daily_tasks ADD COLUMN abbreviation TEXT DEFAULT NULL");
+                }
+                if (!schema.sql.includes('category')) {
+                    uploadedDb.exec("ALTER TABLE daily_tasks ADD COLUMN category TEXT DEFAULT NULL");
+                }
+                if (!schema.sql.includes('notes')) {
+                    uploadedDb.exec("ALTER TABLE daily_tasks ADD COLUMN notes TEXT DEFAULT NULL");
+                }
+            }
+        } catch (e) {
+            console.error("Schema patch warning during task import:", e);
+        }
+
         const tasksToImport = uploadedDb.prepare('SELECT * FROM daily_tasks ORDER BY date ASC, display_order ASC, id ASC').all();
         
         if (tasksToImport.length > 0) {
-            const insertTask = db.prepare('INSERT INTO daily_tasks (date, task_name, duration, color, group_id, roster_type, display_order) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            const insertTask = db.prepare('INSERT INTO daily_tasks (date, task_name, duration, color, group_id, roster_type, display_order, abbreviation, category, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             
             let diffDays = 0;
             let numWeeks = 1;
@@ -1242,7 +1323,7 @@ app.post('/api/database/import/tasks', upload.single('database'), (req, res) => 
                             newGroupId = groupMap[t.group_id];
                         }
                         
-                        insertTask.run(newDateStr, t.task_name, t.duration, t.color, newGroupId, rosterType, t.display_order !== null ? t.display_order : 0);
+                        insertTask.run(newDateStr, t.task_name, t.duration, t.color, newGroupId, rosterType, t.display_order !== null ? t.display_order : 0, t.abbreviation, t.category, t.notes);
                     });
                 }
             })();
@@ -1536,6 +1617,64 @@ app.post('/api/tasks', (req, res) => {
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'Failed to add task.' });
+    }
+});
+
+// --- API: ROSTER CATEGORIES ---
+app.get('/api/categories', (req, res) => {
+    const { rosterType = 'QA' } = req.query;
+    try {
+        const categories = db.prepare('SELECT category_name FROM roster_categories WHERE roster_type = ? ORDER BY category_name ASC').all(rosterType);
+        res.json(categories.map(c => c.category_name));
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch categories.' });
+    }
+});
+
+app.post('/api/categories', (req, res) => {
+    const { rosterType = 'QA', categoryName, oldCategoryName } = req.body;
+    if (!categoryName || !categoryName.trim()) {
+        return res.status(400).json({ error: 'Category name is required.' });
+    }
+    const cleanName = categoryName.trim();
+    try {
+        db.transaction(() => {
+            if (oldCategoryName) {
+                const cleanOld = oldCategoryName.trim();
+                // Check if the new category already exists
+                const exists = db.prepare('SELECT id FROM roster_categories WHERE roster_type = ? AND category_name = ?').get(rosterType, cleanName);
+                if (exists && cleanName.toLowerCase() !== cleanOld.toLowerCase()) {
+                    throw new Error('Category already exists.');
+                }
+                
+                db.prepare('UPDATE roster_categories SET category_name = ? WHERE roster_type = ? AND category_name = ?').run(cleanName, rosterType, cleanOld);
+                db.prepare('UPDATE daily_tasks SET category = ? WHERE roster_type = ? AND category = ?').run(cleanName, rosterType, cleanOld);
+                db.prepare('UPDATE task_templates SET category = ? WHERE roster_type = ? AND category = ?').run(cleanName, rosterType, cleanOld);
+            } else {
+                db.prepare('INSERT OR IGNORE INTO roster_categories (roster_type, category_name) VALUES (?, ?)').run(rosterType, cleanName);
+            }
+        })();
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message || 'Failed to save category.' });
+    }
+});
+
+app.delete('/api/categories', (req, res) => {
+    const { rosterType = 'QA', categoryName } = req.body;
+    if (!categoryName) {
+        return res.status(400).json({ error: 'Category name is required.' });
+    }
+    const cleanName = categoryName.trim();
+    try {
+        db.transaction(() => {
+            db.prepare('DELETE FROM roster_categories WHERE roster_type = ? AND category_name = ?').run(rosterType, cleanName);
+            db.prepare('UPDATE daily_tasks SET category = NULL WHERE roster_type = ? AND category = ?').run(rosterType, cleanName);
+            db.prepare('UPDATE task_templates SET category = NULL WHERE roster_type = ? AND category = ?').run(rosterType, cleanName);
+        })();
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to delete category.' });
     }
 });
 
@@ -2088,7 +2227,13 @@ app.delete('/api/tasks/:id', (req, res) => {
                     )
                 `);
 
-                if (task.group_id && mode === 'all') {
+                if (mode === 'all_type_strict') {
+                    const allOfThisType = db.prepare('SELECT date, task_name, roster_type FROM daily_tasks WHERE task_name = ? AND roster_type = ?').all(task.task_name, task.roster_type || 'QA');
+                    allOfThisType.forEach(gt => {
+                        deleteShiftTask.run(gt.task_name, gt.date, gt.roster_type || 'QA');
+                    });
+                    db.prepare('DELETE FROM daily_tasks WHERE task_name = ? AND roster_type = ?').run(task.task_name, task.roster_type || 'QA');
+                } else if (task.group_id && mode === 'all') {
                     const groupTasks = db.prepare('SELECT date, task_name, roster_type FROM daily_tasks WHERE group_id = ?').all(task.group_id);
                     groupTasks.forEach(gt => {
                         deleteShiftTask.run(gt.task_name, gt.date, gt.roster_type || 'QA');

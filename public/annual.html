@@ -536,6 +536,21 @@
             cursor: grab;
             border: 0.5px solid rgba(0, 0, 0, 0.2);
             text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
+            transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease, outline 0.15s ease;
+        }
+
+        .mini-task-chip:hover {
+            transform: scale(1.05);
+            outline: 2px solid #ffd700;
+            box-shadow: 0 0 8px #ffd700;
+            z-index: 10;
+        }
+
+        .mini-task-chip.highlight-group {
+            outline: 3px solid #ffd700 !important;
+            box-shadow: 0 0 12px #ffd700 !important;
+            transform: scale(1.08);
+            z-index: 9;
         }
 
         .mini-task-chip:active {
@@ -878,6 +893,7 @@
         <div class="nav-buttons">
             <button onclick="window.location.href='/'" class="btn-secondary">◀ Rota Dashboard</button>
             <button onclick="toggleTheme()" id="themeBtn" class="btn-secondary">Toggle Light Theme</button>
+            <button onclick="toggleAdmin()" id="adminBtn" style="background-color: #e53e3e; color: white;" class="btn-secondary">Admin Login</button>
         </div>
     </header>
 
@@ -916,6 +932,8 @@
         </div>
     </div>
 
+
+
     <div class="main-layout">
         <!-- Sidebar Controls -->
         <div class="sidebar">
@@ -932,14 +950,14 @@
             </div>
 
             <!-- Task Templates -->
-            <div class="panel">
+            <div class="panel" id="templatesPanel" style="display: none;">
                 <h2>Task Templates</h2>
-                <p style="font-size: 11px; color: var(--text-muted); margin-top: -6px; margin-bottom: 10px;">Drag a template card onto the calendar to schedule it</p>
+                <p id="dragInstruction" style="font-size: 11px; color: var(--text-muted); margin-top: -6px; margin-bottom: 10px; display: none;">Drag a template card onto the calendar to schedule it</p>
                 <div class="template-list" id="templateList">
                     <!-- Populated dynamically from database -->
                 </div>
                 
-                <div class="template-form">
+                <div class="template-form" id="templateForm" style="display: none;">
                     <strong style="font-size: 12px; color: var(--accent-secondary);">Create Template</strong>
                     <div class="form-row">
                         <label for="templateName">Name</label>
@@ -959,10 +977,13 @@
                     </div>
                     <div class="form-row">
                         <label for="templateNotes">Task Note / Description</label>
-                        <input type="text" id="templateNotes" placeholder="e.g. Run monthly QA checks (optional)">
+                        <textarea id="templateNotes" rows="3" placeholder="e.g. Run monthly QA checks (optional)" style="width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-bg); color: var(--text-color); resize: vertical; font-family: inherit; font-size: 13px;"></textarea>
                     </div>
                     <div class="form-row">
-                        <label for="templateCategory">Category</label>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <label for="templateCategory" style="margin: 0;">Category</label>
+                            <button type="button" onclick="openCategoryModal()" class="btn-secondary" style="font-size: 10px; padding: 2px 6px; cursor: pointer; border-radius: 4px;">⚙️ Manage</button>
+                        </div>
                         <select id="templateCategory" style="width: 100%; padding: 4px; box-sizing: border-box; background-color: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
                             <option value="">-- None (Other) --</option>
                             <option value="Monthly Linac QA">Monthly Linac QA</option>
@@ -1036,6 +1057,15 @@
     </div>
 </div>
 
+<!-- Admin Controls Panel at the Bottom -->
+<div id="adminBottomPanel" style="display: none; justify-content: center; margin-top: 35px; margin-bottom: 25px; padding: 20px; border-top: 1px dashed var(--border-color); width: 100%; box-sizing: border-box;">
+    <button id="updateAnnualBtn" onclick="promptUpdateAnnualHtml()" class="btn-secondary" style="background-color: var(--danger-color); color: white; padding: 8px 16px; font-weight: bold; border-radius: 4px; font-size: 13px; cursor: pointer; border: none; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">Update annual.html</button>
+</div>
+
+<div style="text-align: right; margin-top: 30px; padding-bottom: 10px; color: #a0aec0; font-size: 12px; width: 100%; box-sizing: border-box;">
+    Created by James Burnley | Version 1.5
+</div>
+
 <!-- Scheduler Modal -->
 <div id="dayModal" class="modal-overlay" style="display: none;">
     <div class="modal-box">
@@ -1049,62 +1079,66 @@
             </div>
         </div>
 
-        <!-- Add Single Task Section -->
-        <div class="modal-section">
-            <div class="modal-section-title">Add Single Task</div>
-            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
-                <input type="text" id="singleTaskName" placeholder="Task Name" style="flex-grow: 1;">
-                <select id="singleTaskDuration" onchange="handleSingleTaskDurationChange(this.value)" style="width: 110px;">
-                    <option value="All Day">All Day</option>
-                    <option value="AM">AM</option>
-                    <option value="PM">PM</option>
-                    <option value="Multi-Day">Multi-Day</option>
-                </select>
-            </div>
-            <div id="singleTaskMultiDayFields" style="display: none; flex-direction: column; gap: 6px; margin-bottom: 8px; padding: 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--container-bg);">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 11px; color: var(--text-muted);">Number of Days:</span>
-                    <input type="number" id="singleTaskNumDays" value="2" min="1" max="31" style="width: 60px; padding: 2px 4px; font-size: 12px;">
+        <!-- Admin Scheduler Actions (Visible to Admin Only) -->
+        <div id="modalDayAdminActions" style="display: none;">
+            <!-- Add Single Task Section -->
+            <div class="modal-section">
+                <div class="modal-section-title">Add Single Task</div>
+                <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                    <input type="text" id="singleTaskName" placeholder="Task Name" style="flex-grow: 1;">
+                    <select id="singleTaskDuration" onchange="handleSingleTaskDurationChange(this.value)" style="width: 110px;">
+                        <option value="All Day">All Day</option>
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
+                        <option value="Multi-Day">Multi-Day</option>
+                    </select>
                 </div>
-                <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer; color: var(--text-muted);">
-                    <input type="checkbox" id="singleTaskIgnoreWeekends" checked style="margin: 0;">
-                    <span>Ignore Weekends</span>
-                </label>
-            </div>
-            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
-                <input type="text" id="singleTaskNotes" placeholder="Notes / Description (optional)" style="flex-grow: 1; padding: 4px; box-sizing: border-box; background-color: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; font-size: 13px;">
-            </div>
-            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
-                <label for="singleTaskCategory" style="font-size: 11px; font-weight: bold; color: var(--text-muted); width: 60px;">Category:</label>
-                <select id="singleTaskCategory" style="flex-grow: 1; padding: 4px; box-sizing: border-box; background-color: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
-                    <option value="">-- None (Other) --</option>
-                    <option value="Monthly Linac QA">Monthly Linac QA</option>
-                    <option value="CT QA">CT QA</option>
-                    <option value="Scheduled Service">Scheduled Service</option>
-                    <option value="Unscheduled Service">Unscheduled Service</option>
-                </select>
-            </div>
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div style="font-size: 11px; font-weight: bold; color: var(--text-muted);">Color:</div>
-                <div class="color-selector" id="modalSingleColorSelector" style="margin: 0; width: 220px;">
-                    <!-- Colored dots populated dynamically -->
+                <div id="singleTaskMultiDayFields" style="display: none; flex-direction: column; gap: 6px; margin-bottom: 8px; padding: 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--container-bg);">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 11px; color: var(--text-muted);">Number of Days:</span>
+                        <input type="number" id="singleTaskNumDays" value="2" min="1" max="31" style="width: 60px; padding: 2px 4px; font-size: 12px;">
+                    </div>
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer; color: var(--text-muted);">
+                        <input type="checkbox" id="singleTaskIgnoreWeekends" checked style="margin: 0;">
+                        <span>Ignore Weekends</span>
+                    </label>
                 </div>
+                <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                    <input type="text" id="singleTaskNotes" placeholder="Notes / Description (optional)" style="flex-grow: 1; padding: 4px; box-sizing: border-box; background-color: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; font-size: 13px;">
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                    <label for="singleTaskCategory" style="font-size: 11px; font-weight: bold; color: var(--text-muted); width: 60px;">Category:</label>
+                    <select id="singleTaskCategory" style="flex-grow: 1; padding: 4px; box-sizing: border-box; background-color: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
+                        <option value="">-- None (Other) --</option>
+                        <option value="Monthly Linac QA">Monthly Linac QA</option>
+                        <option value="CT QA">CT QA</option>
+                        <option value="Scheduled Service">Scheduled Service</option>
+                        <option value="Unscheduled Service">Unscheduled Service</option>
+                    </select>
+                    <button type="button" onclick="openCategoryModal()" class="btn-secondary" style="font-size: 10px; padding: 4px 6px; cursor: pointer; border-radius: 4px; height: 26px;">⚙️</button>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="font-size: 11px; font-weight: bold; color: var(--text-muted);">Color:</div>
+                    <div class="color-selector" id="modalSingleColorSelector" style="margin: 0; width: 220px;">
+                        <!-- Colored dots populated dynamically -->
+                    </div>
+                </div>
+                <button onclick="addSingleTask()" class="btn-success" style="width: 100%; margin-top: 10px;">Add Daily Task</button>
             </div>
-            <button onclick="addSingleTask()" class="btn-success" style="width: 100%; margin-top: 10px;">Add Daily Task</button>
-        </div>
-
-        <!-- Apply Template Section -->
-        <div class="modal-section">
-            <div class="modal-section-title">Apply Template (Multi-Day)</div>
-            <div style="display: flex; flex-direction: column; gap: 10px;">
-                <select id="modalTemplateSelect" style="width: 100%;">
-                    <option value="">-- Select a Template --</option>
-                </select>
-                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;">
-                    <input type="checkbox" id="modalSkipWeekends" checked>
-                    <span>Skip weekends (Sat/Sun) by default</span>
-                </label>
-                <button onclick="applyTemplateAtDate()" class="btn-success">Apply Template Starting Today</button>
+    
+            <!-- Apply Template Section -->
+            <div class="modal-section">
+                <div class="modal-section-title">Apply Template (Multi-Day)</div>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <select id="modalTemplateSelect" style="width: 100%;">
+                        <option value="">-- Select a Template --</option>
+                    </select>
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;">
+                        <input type="checkbox" id="modalSkipWeekends" checked>
+                        <span>Skip weekends (Sat/Sun) by default</span>
+                    </label>
+                    <button onclick="applyTemplateAtDate()" class="btn-success">Apply Template Starting Today</button>
+                </div>
             </div>
         </div>
 
@@ -1142,7 +1176,7 @@
 
         <div class="form-row" style="margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px;">
             <label for="editEventNotes" style="font-weight: bold; font-size: 12px;">Task Note / Description</label>
-            <input type="text" id="editEventNotes" placeholder="e.g. Note details" style="width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-bg); color: var(--text-color);">
+            <textarea id="editEventNotes" rows="3" placeholder="e.g. Note details" style="width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-bg); color: var(--text-color); resize: vertical; font-family: inherit; font-size: 13px;"></textarea>
         </div>
 
         <div class="form-row" style="margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px;">
@@ -1164,8 +1198,8 @@
 <div id="customContextMenu" class="custom-context-menu" style="display: none;">
     <div id="taskContextItems">
         <div class="context-menu-item" onclick="triggerContextInspect()">🔍 Inspect Interval (Track)</div>
-        <div class="context-menu-item" onclick="triggerContextEdit()">✏️ Edit Task Event</div>
-        <div class="context-menu-item danger-item" onclick="triggerContextDelete()">🗑️ Delete Task</div>
+        <div class="context-menu-item" id="contextEditBtn" onclick="triggerContextEdit()">✏️ Edit Task Event</div>
+        <div class="context-menu-item danger-item" id="contextDeleteBtn" onclick="triggerContextDelete()">🗑️ Delete Task</div>
     </div>
     <div id="dayContextItems" style="display: none;">
         <div class="context-menu-header" style="font-size: 10px; padding: 6px 12px; color: var(--text-muted); font-weight: bold; text-transform: uppercase; border-bottom: 1px solid var(--border-color); background: var(--container-bg);">Add from Template:</div>
@@ -1193,13 +1227,14 @@
         <div class="modal-buttons" style="display: flex; flex-direction: column; gap: 8px; width: 100%;">
             <button id="deleteEntireRunBtn" class="btn-danger" style="width: 100%; padding: 10px;">🗑️ Delete Entire Multi-Day Run</button>
             <button id="deleteSingleDayBtn" class="btn-secondary" style="width: 100%; padding: 10px;">📅 Delete Selected Single Day Only</button>
+            <button id="deleteAllOfTypeBtn" class="btn-danger" style="width: 100%; padding: 10px; background-color: #742a2a; border-color: #742a2a;">💥 Delete ALL Tasks of This Type</button>
             <button onclick="closeDeleteConfirmModal()" class="btn-secondary" style="width: 100%; padding: 10px; margin-top: 5px;">Cancel</button>
         </div>
     </div>
 </div>
 
 <!-- Custom Reusable Confirm Modal (Yes/No) -->
-<div id="customConfirmModal" class="modal-overlay" style="display: none;">
+<div id="customConfirmModal" class="modal-overlay" style="display: none; z-index: 2100;">
     <div class="modal-box" style="width: 400px; text-align: center;">
         <h2 id="customConfirmTitle" style="margin-top: 0; color: var(--accent-primary);">Confirmation</h2>
         <p id="customConfirmMessage" style="font-size: 13px; color: var(--text-main); line-height: 1.5; margin: 10px 0 20px 0; text-align: left;"></p>
@@ -1225,6 +1260,60 @@
     </div>
 </div>
 
+<!-- Read-Only Task Details Modal -->
+<div id="taskDetailsModal" class="modal-overlay" style="display: none;">
+    <div class="modal-box" style="width: 400px; text-align: left;">
+        <h2 id="detailsTaskTitle" style="margin-top: 0; color: var(--accent-primary); display: flex; align-items: center; gap: 8px;">
+            ℹ️ Task Details
+        </h2>
+        <div style="display: flex; flex-direction: column; gap: 12px; margin: 15px 0; font-size: 13px; color: var(--text-main); line-height: 1.6;">
+            <div><strong>Full Name:</strong> <span id="detailsTaskName"></span></div>
+            <div><strong>Duration:</strong> <span id="detailsTaskDuration"></span></div>
+            <div><strong>Category:</strong> <span id="detailsTaskCategory"></span></div>
+            <div><strong>Notes / Description:</strong> <div id="detailsTaskNotes" style="margin-top: 4px; padding: 8px; background: var(--container-bg); border: 1px solid var(--border-color); border-radius: 4px; font-style: italic; white-space: pre-wrap; word-break: break-word;"></div></div>
+        </div>
+        <div class="modal-buttons" style="display: flex; justify-content: flex-end;">
+            <button onclick="closeTaskDetailsModal()" class="btn-secondary" style="padding: 8px 16px;">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Category Manager Modal -->
+<div id="categoryModal" class="modal-overlay" style="display: none;">
+    <div class="modal-box" style="width: 450px; text-align: left;">
+        <h2 style="margin-top: 0; color: var(--accent-primary); display: flex; align-items: center; justify-content: space-between;">
+            <span>📂 Manage Categories</span>
+            <span style="font-size: 12px; font-weight: normal; color: var(--text-muted);" id="categoryModalRosterTitle"></span>
+        </h2>
+        
+        <div style="display: flex; gap: 8px; margin-bottom: 15px; align-items: center;">
+            <input type="text" id="newCategoryInput" placeholder="New Category Name" style="flex-grow: 1; padding: 6px; font-size: 13px;">
+            <button onclick="addCategory()" class="btn-success" style="padding: 6px 12px; font-size: 13px; height: 33px;">+ Add</button>
+        </div>
+
+        <div id="categoryListContainer" style="max-height: 220px; overflow-y: auto; margin-bottom: 20px; border: 1px solid var(--border-color); border-radius: 4px; padding: 6px; background: var(--card-bg); display: flex; flex-direction: column; gap: 6px;">
+            <!-- Populated dynamically -->
+        </div>
+
+        <div class="modal-buttons" style="display: flex; justify-content: flex-end;">
+            <button onclick="closeCategoryModal()" class="btn-secondary" style="padding: 8px 16px;">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Custom Prompt Modal -->
+<div id="customPromptModal" class="modal-overlay" style="display: none; z-index: 2100;">
+    <div class="modal-box" style="width: 350px;">
+        <h2 id="customPromptTitle">Input Required</h2>
+        <div id="customPromptMessage" style="font-size: 14px; margin-bottom: 15px; color: var(--text-color);"></div>
+        <input type="password" id="customPromptInput" style="width: 100%; padding: 6px; box-sizing: border-box; margin-bottom: 15px; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button id="customPromptCancelBtn" class="btn-secondary" style="padding: 6px 12px;">Cancel</button>
+            <button id="customPromptSubmitBtn" class="btn-success" style="padding: 6px 12px;">Submit</button>
+        </div>
+    </div>
+</div>
+
 <script>
     // State
     let currentRoster = 'QA';
@@ -1232,7 +1321,24 @@
     let isLightTheme = false;
     let allTasks = [];
     let templates = [];
+    let isAdmin = false;
     
+    let databaseCategories = [];
+
+    async function fetchCategories() {
+        try {
+            const res = await fetch(`/api/categories?rosterType=${currentRoster}`);
+            if (res.ok) {
+                databaseCategories = await res.json();
+            } else {
+                databaseCategories = ROSTER_CATEGORIES[currentRoster] || [];
+            }
+        } catch (err) {
+            console.error("Error fetching categories:", err);
+            databaseCategories = ROSTER_CATEGORIES[currentRoster] || [];
+        }
+    }
+
     const ROSTER_CATEGORIES = {
         'QA': ['Monthly Linac QA', 'CT QA', 'Scheduled Service', 'Unscheduled Service'],
         'Planning': ['Treatment Planning', 'Plan Review', 'Peer Review', 'Planning Audit'],
@@ -1241,26 +1347,24 @@
     };
 
     function getCategoryOptions() {
-        return [...(ROSTER_CATEGORIES[currentRoster] || []), 'Other'];
+        return [...databaseCategories, 'Other'];
     }
 
     function resetFiltersForRoster() {
         filters = {};
-        const cats = ROSTER_CATEGORIES[currentRoster] || [];
-        cats.forEach(cat => {
+        databaseCategories.forEach(cat => {
             filters[cat] = true;
         });
         filters['Other'] = false;
     }
 
     function populateCategoryDropdowns() {
-        const cats = ROSTER_CATEGORIES[currentRoster] || [];
         const selectIds = ['templateCategory', 'singleTaskCategory', 'editEventCategory'];
         selectIds.forEach(id => {
             const select = document.getElementById(id);
             if (select) {
                 select.innerHTML = '<option value="">-- None (Other) --</option>' +
-                    cats.map(cat => `<option value="${escapeHTML(cat)}">${escapeHTML(cat)}</option>`).join('');
+                    databaseCategories.map(cat => `<option value="${escapeHTML(cat)}">${escapeHTML(cat)}</option>`).join('');
             }
         });
     }
@@ -1317,11 +1421,13 @@
         renderColorDots('colorSelector', 'selectedTemplateColor');
         renderColorDots('modalSingleColorSelector', 'selectedSingleTaskColor');
 
-        // Populate dynamic category selects for active roster
-        populateCategoryDropdowns();
-
-        // Load DB data
-        loadAnnualData();
+        // Populate dynamic category selects for active roster & load DB data
+        (async () => {
+            await fetchCategories();
+            resetFiltersForRoster();
+            populateCategoryDropdowns();
+            loadAnnualData();
+        })();
 
         // Escape key global listener to close modals
         document.addEventListener('keydown', (e) => {
@@ -1340,6 +1446,15 @@
 
                 const templateCascadeModal = document.getElementById('templateCascadeModal');
                 if (templateCascadeModal && templateCascadeModal.style.display !== 'none') templateCascadeModal.style.display = 'none';
+
+                const customPromptModal = document.getElementById('customPromptModal');
+                if (customPromptModal && customPromptModal.style.display !== 'none') customPromptModal.style.display = 'none';
+
+                const taskDetailsModal = document.getElementById('taskDetailsModal');
+                if (taskDetailsModal && taskDetailsModal.style.display !== 'none') closeTaskDetailsModal();
+
+                const categoryModal = document.getElementById('categoryModal');
+                if (categoryModal && categoryModal.style.display !== 'none') closeCategoryModal();
 
                 const customContextMenu = document.getElementById('customContextMenu');
                 if (customContextMenu && customContextMenu.style.display !== 'none') closeContextMenu();
@@ -1375,8 +1490,134 @@
         localStorage.setItem('theme', isLightTheme ? 'light' : 'dark');
     }
 
-    function switchRoster(rosterName) {
+    const ADMIN_PASSWORD = 'admin';
+
+    async function toggleAdmin() {
+        if (isAdmin) {
+            isAdmin = false;
+            document.getElementById('adminBtn').innerText = 'Admin Login';
+            document.getElementById('adminBtn').style.background = '#e53e3e';
+            document.getElementById('adminBottomPanel').style.display = 'none';
+            document.getElementById('templatesPanel').style.display = 'none';
+            document.getElementById('templateForm').style.display = 'none';
+            document.getElementById('dragInstruction').style.display = 'none';
+            showToast('Logged out of Admin mode.', 'info');
+            renderTemplatesList();
+            loadAnnualData();
+        } else {
+            const pwd = await showCustomPrompt('Admin Login', 'Enter Admin Password:');
+            if (pwd === ADMIN_PASSWORD) {
+                isAdmin = true;
+                document.getElementById('adminBtn').innerText = 'Logout Admin';
+                document.getElementById('adminBtn').style.background = '#4a5568';
+                document.getElementById('adminBottomPanel').style.display = 'flex';
+                document.getElementById('templatesPanel').style.display = 'block';
+                document.getElementById('templateForm').style.display = 'block';
+                document.getElementById('dragInstruction').style.display = 'block';
+                showToast('Admin mode enabled.', 'success');
+                renderTemplatesList();
+                loadAnnualData();
+            } else if (pwd !== null) {
+                showToast('Incorrect password.', 'error');
+            }
+        }
+    }
+
+    function showCustomPrompt(title, message, isPassword = true, defaultValue = '') {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('customPromptModal');
+            document.getElementById('customPromptTitle').innerText = title;
+            document.getElementById('customPromptMessage').innerText = message;
+            
+            const input = document.getElementById('customPromptInput');
+            input.type = isPassword ? 'password' : 'text';
+            input.value = defaultValue;
+            
+            const submitBtn = document.getElementById('customPromptSubmitBtn');
+            const cancelBtn = document.getElementById('customPromptCancelBtn');
+            
+            submitBtn.onclick = () => {
+                input.onkeydown = null; // clean up listener
+                modal.style.display = 'none';
+                resolve(input.value);
+            };
+            
+            cancelBtn.onclick = () => {
+                input.onkeydown = null; // clean up listener
+                modal.style.display = 'none';
+                resolve(null);
+            };
+
+            input.onkeydown = (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    submitBtn.click();
+                }
+            };
+            
+            modal.style.display = 'flex';
+            input.focus();
+        });
+    }
+
+    async function promptUpdateAnnualHtml() {
+        if (!isAdmin) return;
+
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.html';
+        fileInput.style.display = 'none';
+
+        fileInput.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const pwd = await showCustomPrompt(
+                'Input Required',
+                `DANGER: Enter Admin Password to confirm updating annual.html with "${file.name}":`
+            );
+            if (pwd !== ADMIN_PASSWORD) {
+                if (pwd !== null) showToast('Incorrect password.', 'error');
+                return;
+            }
+
+            showCustomConfirm(
+                'Overwrite annual.html',
+                `Are you sure you want to overwrite annual.html with "${file.name}"? This could break the app.`,
+                async () => {
+                    const formData = new FormData();
+                    formData.append('annualfile', file);
+
+                    try {
+                        const response = await fetch('/api/admin/update-annual', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const result = await response.json();
+                        if (result.success) {
+                            showToast('annual.html successfully updated! The page will now reload.', 'success');
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 1500);
+                        } else {
+                            showToast(result.error || 'Failed to update annual.html.', 'error');
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        showToast('Error uploading annual.html.', 'error');
+                    }
+                }
+            );
+        };
+
+        document.body.appendChild(fileInput);
+        fileInput.click();
+        fileInput.remove();
+    }
+
+    async function switchRoster(rosterName) {
         currentRoster = rosterName;
+        await fetchCategories();
         resetFiltersForRoster();
         populateCategoryDropdowns();
         
@@ -1510,7 +1751,7 @@
         }
 
         list.innerHTML = templates.map(t => `
-            <div class="template-card" draggable="true" ondragstart="handleTemplateDragStart(event, ${t.id})">
+            <div class="template-card" draggable="${isAdmin}" ondragstart="handleTemplateDragStart(event, ${t.id})">
                 <div class="template-info">
                     <span class="template-name">${escapeHTML(t.task_name)} ${t.abbreviation ? `<span style="font-size:11px; color:var(--accent-secondary); font-weight:bold;">(${escapeHTML(t.abbreviation)})</span>` : ''}</span>
                     <span class="template-meta">
@@ -1520,10 +1761,12 @@
                         | <span class="${t.color}" style="display:inline-block; width:10px; height:10px; border-radius:50%;"></span> ${t.color.replace('color-', 'Color ')}
                     </span>
                 </div>
+                ${isAdmin ? `
                 <div style="display: flex; gap: 4px; align-items: center;">
                     <button onclick="event.stopPropagation(); editTemplate(${t.id})" class="btn-secondary" style="padding: 4px 8px; font-size: 11px;">Edit</button>
                     <button onclick="event.stopPropagation(); deleteTemplate(${t.id})" class="btn-danger" style="padding: 4px 8px; font-size: 11px;">Delete</button>
                 </div>
+                ` : ''}
             </div>
         `).join('');
     }
@@ -2434,23 +2677,56 @@
                         if (currentViewMode === 'month') {
                             chip.innerHTML = `
                                 <div style="font-weight: bold; line-height: 1.2;">${escapeHTML(displayName)}</div>
+                                ${task.category ? `<div class="task-chip-category" style="font-size: 9px; opacity: 0.8; margin-top: 1px; font-weight: normal; font-style: italic; white-space: normal; line-height: 1.1; word-break: break-word;">${escapeHTML(task.category)}</div>` : ''}
                                 ${task.notes ? `<div class="task-chip-notes" style="font-size: 9px; opacity: 0.85; margin-top: 1px; font-weight: normal; white-space: normal; line-height: 1.1; word-break: break-word;">${escapeHTML(task.notes)}</div>` : ''}
                             `;
                         } else {
                             chip.innerText = displayName;
                         }
-                        chip.title = `${task.task_name} (${task.duration}) - ${task.has_staff ? 'Staff Assigned' : 'No Staff Assigned'}${task.notes ? `\nNote: ${task.notes}` : ''}. Drag to reschedule, Click to edit, Right-click for options`;
-                        
-                        // Draggable existing task chip
-                        chip.setAttribute('draggable', 'true');
-                        chip.addEventListener('dragstart', (e) => handleTaskChipDragStart(e, task.id));
                         chip.addEventListener('contextmenu', (e) => handleTaskRightClick(e, task.id));
                         chip.addEventListener('dblclick', (e) => handleTaskChipDoubleClick(e, task.id));
-                        chip.addEventListener('click', (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            openEditEventModal(task.id);
+
+                        chip.setAttribute('data-task-name', task.task_name);
+                        if (task.group_id) {
+                            chip.setAttribute('data-group-id', task.group_id);
+                        }
+
+                        chip.addEventListener('mouseenter', () => {
+                            const gid = task.group_id;
+                            if (gid) {
+                                document.querySelectorAll('.mini-task-chip').forEach(otherChip => {
+                                    const otherGid = otherChip.getAttribute('data-group-id');
+                                    if (otherGid === String(gid)) {
+                                        otherChip.classList.add('highlight-group');
+                                    }
+                                });
+                            }
                         });
+
+                        chip.addEventListener('mouseleave', () => {
+                            document.querySelectorAll('.mini-task-chip').forEach(otherChip => {
+                                otherChip.classList.remove('highlight-group');
+                            });
+                        });
+
+                        if (isAdmin) {
+                            chip.title = `${task.task_name} (${task.duration}) - ${task.has_staff ? 'Staff Assigned' : 'No Staff Assigned'}${task.notes ? `\nNote: ${task.notes}` : ''}. Drag to reschedule, Click to edit, Right-click for options`;
+                            chip.setAttribute('draggable', 'true');
+                            chip.addEventListener('dragstart', (e) => handleTaskChipDragStart(e, task.id));
+                            chip.addEventListener('click', (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                openEditEventModal(task.id);
+                            });
+                        } else {
+                            chip.title = `${task.task_name} (${task.duration}) - ${task.has_staff ? 'Staff Assigned' : 'No Staff Assigned'}${task.notes ? `\nNote: ${task.notes}` : ''}. Click for details, Double-click to track spacing, Right-click to inspect`;
+                            chip.setAttribute('draggable', 'false');
+                            chip.addEventListener('click', (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                openTaskDetailsModal(task.id);
+                            });
+                        }
                         
                         container.appendChild(chip);
                     });
@@ -2553,7 +2829,7 @@
         if (trackedTask) {
             const template = templates.find(t => t.task_name === trackedTask);
             const limit = template ? template.target_interval : 6;
-            highlightCalendarDaysForTask(trackedTask, limit, trackedTaskInstance);
+            highlightCalendarDaysForTask(trackedTask, limit, null);
         }
     }
 
@@ -2573,10 +2849,12 @@
                 <div class="day-task-item ${t.color}" style="display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; align-items: stretch; margin-bottom: 6px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                         <span class="day-task-name">${escapeHTML(t.task_name)} <span class="day-task-meta">(${t.duration})</span></span>
+                        ${isAdmin ? `
                         <div class="day-task-actions" style="display: flex; gap: 8px;">
                             <button onclick="editTaskFromDayModal(${t.id})" class="edit-icon-btn" title="Edit Event" style="background: none; border: none; cursor: pointer; font-size: 13px; padding: 0;">✏️</button>
                             <button onclick="deleteTask(${t.id}, '${escapeHTML(t.task_name)}')" class="delete-icon-btn" title="Delete Task" style="background: none; border: none; cursor: pointer; font-size: 13px; padding: 0;">🗑️</button>
                         </div>
+                        ` : ''}
                     </div>
                     ${t.notes ? `<div class="day-task-note" style="font-size: 11px; opacity: 0.8; font-style: italic; border-top: 1px dashed var(--border-color); padding-top: 4px; margin-top: 2px;">Note: ${escapeHTML(t.notes)}</div>` : ''}
                 </div>
@@ -2590,6 +2868,9 @@
         document.getElementById('singleTaskIgnoreWeekends').checked = true;
         handleSingleTaskDurationChange('All Day');
         document.getElementById('modalTemplateSelect').value = '';
+
+        // Show/hide admin schedule sections
+        document.getElementById('modalDayAdminActions').style.display = isAdmin ? 'block' : 'none';
 
         modal.style.display = 'flex';
     }
@@ -2758,6 +3039,7 @@
         const warnEl = document.getElementById('deleteConfirmModalWarning');
         const entireBtn = document.getElementById('deleteEntireRunBtn');
         const singleBtn = document.getElementById('deleteSingleDayBtn');
+        const allOfTypeBtn = document.getElementById('deleteAllOfTypeBtn');
         
         warnEl.style.display = 'none';
         warnEl.innerHTML = '';
@@ -2787,6 +3069,20 @@
             if (proceed) {
                 executeDeletion(task.id, 'single_strict', hasGroup);
             }
+        };
+
+        allOfTypeBtn.onclick = async () => {
+            closeDeleteConfirmModal();
+            showCustomConfirm(
+                "⚠️ CRITICAL WARNING",
+                `This action will permanently delete EVERY single occurrence of the task "${task.task_name}" from the database across the entire year and all rosters.\n\nAre you absolutely sure you want to proceed?`,
+                async () => {
+                    executeDeletion(task.id, 'all_type_strict', false);
+                },
+                () => {
+                    openDeleteConfirmModal(task);
+                }
+            );
         };
         
         modal.style.display = 'flex';
@@ -2835,7 +3131,13 @@
         try {
             const res = await fetch(`/api/tasks/${id}?mode=${mode}`, { method: 'DELETE' });
             if (res.ok) {
-                showToast(hasGroup && mode === 'all' ? "Event deleted successfully." : "Task instance deleted.", "success");
+                let msg = "Task instance deleted.";
+                if (mode === 'all_type_strict') {
+                    msg = "All tasks of this type successfully deleted.";
+                } else if (hasGroup && mode === 'all') {
+                    msg = "Event deleted successfully.";
+                }
+                showToast(msg, "success");
                 closeDeleteConfirmModal();
                 closeDayModal();
                 loadAnnualData();
@@ -2867,6 +3169,11 @@
         const menu = document.getElementById('customContextMenu');
         document.getElementById('taskContextItems').style.display = 'block';
         document.getElementById('dayContextItems').style.display = 'none';
+        
+        // Hide edit/delete options in context menu if not admin
+        document.getElementById('contextEditBtn').style.display = isAdmin ? 'block' : 'none';
+        document.getElementById('contextDeleteBtn').style.display = isAdmin ? 'block' : 'none';
+        
         menu.style.display = 'block';
         
         const viewWidth = window.innerWidth;
@@ -2884,6 +3191,8 @@
     }
 
     function handleDayRightClick(e, dateStr) {
+        if (!isAdmin) return; // Disable right-click scheduling if not admin!
+        
         e.preventDefault();
         e.stopPropagation();
         
@@ -3060,6 +3369,22 @@
             };
             selector.appendChild(dot);
         });
+    }
+
+    function openTaskDetailsModal(taskId) {
+        const task = allTasks.find(t => t.id === taskId);
+        if (!task) return;
+        
+        document.getElementById('detailsTaskName').innerText = task.task_name;
+        document.getElementById('detailsTaskDuration').innerText = task.duration || 'All Day';
+        document.getElementById('detailsTaskCategory').innerText = task.category || 'Other (None)';
+        document.getElementById('detailsTaskNotes').innerText = task.notes || 'No description/notes provided.';
+        
+        document.getElementById('taskDetailsModal').style.display = 'flex';
+    }
+
+    function closeTaskDetailsModal() {
+        document.getElementById('taskDetailsModal').style.display = 'none';
     }
 
     function openEditEventModal(taskId) {
@@ -3520,6 +3845,125 @@
         const parts = dateStr.split('-');
         const localDate = new Date(parts[0], parts[1] - 1, parts[2]);
         return localDate.toLocaleDateString('en-GB', options);
+    }
+
+    async function openCategoryModal() {
+        await fetchCategories();
+        document.getElementById('categoryModalRosterTitle').innerText = `(${currentRoster} Roster)`;
+        renderCategoryList();
+        document.getElementById('categoryModal').style.display = 'flex';
+    }
+
+    function closeCategoryModal() {
+        document.getElementById('categoryModal').style.display = 'none';
+        document.getElementById('newCategoryInput').value = '';
+    }
+
+    function renderCategoryList() {
+        const container = document.getElementById('categoryListContainer');
+        if (databaseCategories.length === 0) {
+            container.innerHTML = `<div style="color: var(--text-muted); font-size: 12px; font-style: italic; padding: 10px 0; text-align: center;">No categories defined for this roster yet.</div>`;
+            return;
+        }
+
+        container.innerHTML = databaseCategories.map(cat => `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: var(--container-bg); border: 1px solid var(--border-color); border-radius: 4px;">
+                <span style="font-size: 13px; font-weight: bold; color: var(--text-color);">${escapeHTML(cat)}</span>
+                <div style="display: flex; gap: 4px;">
+                    <button onclick="editCategory('${escapeHTML(cat).replace(/'/g, "\\'")}')" class="btn-secondary" style="padding: 2px 6px; font-size: 11px;">Edit</button>
+                    <button onclick="deleteCategory('${escapeHTML(cat).replace(/'/g, "\\'")}')" class="btn-danger" style="padding: 2px 6px; font-size: 11px;">Delete</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async function addCategory() {
+        const input = document.getElementById('newCategoryInput');
+        const name = input.value.trim();
+        if (!name) {
+            showToast("Please enter a category name.", "error");
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/categories', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rosterType: currentRoster, categoryName: name })
+            });
+
+            if (res.ok) {
+                showToast(`Category "${name}" added successfully.`, "success");
+                input.value = '';
+                await fetchCategories();
+                renderCategoryList();
+                populateCategoryDropdowns();
+                renderFiltersList();
+            } else {
+                const errData = await res.json();
+                showToast(errData.error || "Failed to add category.", "error");
+            }
+        } catch (err) {
+            console.error(err);
+            showToast("Network error adding category.", "error");
+        }
+    }
+
+    async function editCategory(oldName) {
+        const newName = await showCustomPrompt(`Rename Category`, `Enter new name for category "${oldName}":`, false, oldName);
+        if (!newName || !newName.trim() || newName.trim() === oldName) return;
+
+        const cleanNew = newName.trim();
+        try {
+            const res = await fetch('/api/categories', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rosterType: currentRoster, categoryName: cleanNew, oldCategoryName: oldName })
+            });
+
+            if (res.ok) {
+                showToast(`Category renamed to "${cleanNew}".`, "success");
+                await fetchCategories();
+                renderCategoryList();
+                populateCategoryDropdowns();
+                loadAnnualData();
+            } else {
+                const errData = await res.json();
+                showToast(errData.error || "Failed to rename category.", "error");
+            }
+        } catch (err) {
+            console.error(err);
+            showToast("Network error renaming category.", "error");
+        }
+    }
+
+    async function deleteCategory(name) {
+        showCustomConfirm(
+            "🗑️ Delete Category",
+            `Are you sure you want to delete category "${name}"?\nAll tasks currently in this category will be reset to "Other".`,
+            async () => {
+                try {
+                    const res = await fetch('/api/categories', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ rosterType: currentRoster, categoryName: name })
+                    });
+
+                    if (res.ok) {
+                        showToast(`Category "${name}" deleted.`, "success");
+                        await fetchCategories();
+                        renderCategoryList();
+                        populateCategoryDropdowns();
+                        loadAnnualData();
+                    } else {
+                        showToast("Failed to delete category.", "error");
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showToast("Network error deleting category.", "error");
+                }
+            }
+        );
     }
 
     function escapeHTML(str) {
