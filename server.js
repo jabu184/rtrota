@@ -1620,6 +1620,38 @@ app.post('/api/tasks', (req, res) => {
     }
 });
 
+app.post('/api/tasks/batch', (req, res) => {
+    const { tasks } = req.body;
+    if (!Array.isArray(tasks) || tasks.length === 0) {
+        return res.status(400).json({ error: 'No tasks to insert.' });
+    }
+    
+    try {
+        db.transaction(() => {
+            const insertStmt = db.prepare('INSERT INTO daily_tasks (date, task_name, duration, color, group_id, roster_type, display_order, abbreviation, category, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            
+            const nextOrderCache = {};
+            
+            for (const t of tasks) {
+                const { date, task_name, duration = 'All Day', color = 'color-1', group_id = null, rosterType = 'QA', abbreviation = null, category = null, notes = null } = t;
+                
+                if (nextOrderCache[date] === undefined) {
+                    const maxOrderRow = db.prepare("SELECT MAX(display_order) as maxOrder FROM daily_tasks WHERE date = ? AND roster_type IN (?, 'Universal') AND shift_title IS NULL").get(date, rosterType);
+                    nextOrderCache[date] = (maxOrderRow && maxOrderRow.maxOrder !== null) ? maxOrderRow.maxOrder + 1 : 0;
+                } else {
+                    nextOrderCache[date]++;
+                }
+                
+                insertStmt.run(date, task_name, duration, color, group_id, rosterType, nextOrderCache[date], abbreviation, category, notes);
+            }
+        })();
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Batch task insertion error:", err);
+        res.status(500).json({ error: 'Failed to insert tasks in batch.' });
+    }
+});
+
 // --- API: ROSTER CATEGORIES ---
 app.get('/api/categories', (req, res) => {
     const { rosterType = 'QA' } = req.query;
@@ -1898,20 +1930,32 @@ app.post('/api/tasks/move-annual', (req, res) => {
             if (task.group_id) {
                 const groupTasks = db.prepare('SELECT * FROM daily_tasks WHERE group_id = ? ORDER BY date ASC').all(task.group_id);
                 if (groupTasks.length > 0) {
-                    const oldStartDate = groupTasks[0].date;
-                    const dateDiff = Math.round((new Date(new_date) - new Date(oldStartDate)) / (1000 * 60 * 60 * 24));
+                    const skipWeekends = req.body.skip_weekends !== false; // default true
                     
+                    let currentDate = new Date(new_date + 'T12:00:00Z');
                     const updateDate = db.prepare('UPDATE daily_tasks SET date = ? WHERE id = ?');
+                    
                     groupTasks.forEach(t => {
                         // Clear staff allocations on the original date
                         deleteShiftTask.run(t.task_name, t.date, t.roster_type || 'QA');
 
-                        const originalDate = new Date(t.date);
-                        originalDate.setUTCDate(originalDate.getUTCDate() + dateDiff);
-                        const mm = String(originalDate.getUTCMonth() + 1).padStart(2, '0');
-                        const dd = String(originalDate.getUTCDate()).padStart(2, '0');
-                        const newDateStr = `${originalDate.getUTCFullYear()}-${mm}-${dd}`;
+                        while (true) {
+                            const dayOfWeek = currentDate.getUTCDay();
+                            const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+                            if (skipWeekends && isWeekend) {
+                                currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+                                continue;
+                            }
+                            break;
+                        }
+
+                        const mm = String(currentDate.getUTCMonth() + 1).padStart(2, '0');
+                        const dd = String(currentDate.getUTCDate()).padStart(2, '0');
+                        const newDateStr = `${currentDate.getUTCFullYear()}-${mm}-${dd}`;
+                        
                         updateDate.run(newDateStr, t.id);
+                        
+                        currentDate.setUTCDate(currentDate.getUTCDate() + 1);
                     });
                 }
             } else {
@@ -2233,6 +2277,12 @@ app.delete('/api/tasks/:id', (req, res) => {
                         deleteShiftTask.run(gt.task_name, gt.date, gt.roster_type || 'QA');
                     });
                     db.prepare('DELETE FROM daily_tasks WHERE task_name = ? AND roster_type = ?').run(task.task_name, task.roster_type || 'QA');
+                } else if (mode === 'all_future_type_strict') {
+                    const allOfThisTypeFuture = db.prepare('SELECT date, task_name, roster_type FROM daily_tasks WHERE task_name = ? AND roster_type = ? AND date >= ?').all(task.task_name, task.roster_type || 'QA', task.date);
+                    allOfThisTypeFuture.forEach(gt => {
+                        deleteShiftTask.run(gt.task_name, gt.date, gt.roster_type || 'QA');
+                    });
+                    db.prepare('DELETE FROM daily_tasks WHERE task_name = ? AND roster_type = ? AND date >= ?').run(task.task_name, task.roster_type || 'QA', task.date);
                 } else if (task.group_id && mode === 'all') {
                     const groupTasks = db.prepare('SELECT date, task_name, roster_type FROM daily_tasks WHERE group_id = ?').all(task.group_id);
                     groupTasks.forEach(gt => {
