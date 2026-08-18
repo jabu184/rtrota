@@ -122,6 +122,14 @@
             background: #2f855a;
         }
 
+        button:disabled {
+            background: #cbd5e0 !important;
+            color: #718096 !important;
+            cursor: not-allowed !important;
+            opacity: 0.6;
+            box-shadow: none !important;
+        }
+
         .control-panel {
             background: var(--card-bg);
             padding: 15px;
@@ -455,6 +463,27 @@
             position: relative;
             transition: all 0.1s;
             box-sizing: border-box;
+        }
+
+        .day-cell.drag-optimal::after {
+            content: "★";
+            position: absolute;
+            top: 2px;
+            right: 4px;
+            font-size: 14px;
+            z-index: 10;
+            color: #ecc94b;
+            text-shadow: -1px -1px 0 rgba(0,0,0,0.6), 1px -1px 0 rgba(0,0,0,0.6), -1px 1px 0 rgba(0,0,0,0.6), 1px 1px 0 rgba(0,0,0,0.6);
+        }
+
+        .day-cell.drag-optimal-violation::after {
+            content: "★";
+            position: absolute;
+            top: 2px;
+            right: 4px;
+            font-size: 14px;
+            z-index: 10;
+            color: #3182ce;
         }
 
         .calendar-dashboard.single-month-view .day-cell {
@@ -1063,12 +1092,12 @@
 </div>
 
 <div style="text-align: right; margin-top: 30px; padding-bottom: 10px; color: #a0aec0; font-size: 12px; width: 100%; box-sizing: border-box;">
-    Created by James Burnley | Version 1.51
+    Created by James Burnley | Version 1.52
 </div>
 
 <!-- Scheduler Modal -->
 <div id="dayModal" class="modal-overlay" style="display: none;">
-    <div class="modal-box">
+    <div class="modal-box" style="max-height: 90vh; overflow-y: auto; width: 450px;">
         <h2 id="modalDayTitle">Schedule Date</h2>
         
         <!-- List of existing tasks on that day -->
@@ -1081,8 +1110,14 @@
 
         <!-- Admin Scheduler Actions (Visible to Admin Only) -->
         <div id="modalDayAdminActions" style="display: none;">
+            <!-- Tab toggles -->
+            <div style="display: flex; background: var(--container-bg); border: 1px solid var(--border-color); border-radius: 6px; padding: 3px; margin-bottom: 15px; gap: 4px;">
+                <button id="tabCustomTask" onclick="setDayModalMode('custom')" style="flex: 1; padding: 6px; border: none; background: none; border-radius: 4px; color: var(--text-muted); font-weight: bold; font-size: 12px; cursor: pointer; transition: background 0.15s, color 0.15s;">➕ Add Custom Task</button>
+                <button id="tabTemplate" onclick="setDayModalMode('template')" style="flex: 1; padding: 6px; border: none; background: none; border-radius: 4px; color: var(--text-muted); font-weight: bold; font-size: 12px; cursor: pointer; transition: background 0.15s, color 0.15s;">⚡ Apply Template</button>
+            </div>
+
             <!-- Add Single Task Section -->
-            <div class="modal-section">
+            <div id="dayModalCustomSection" class="modal-section">
                 <div class="modal-section-title">Add Single Task</div>
                 <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
                     <input type="text" id="singleTaskName" placeholder="Task Name" style="flex-grow: 1;">
@@ -1098,10 +1133,6 @@
                         <span style="font-size: 11px; color: var(--text-muted);">Number of Days:</span>
                         <input type="number" id="singleTaskNumDays" value="2" min="1" max="31" style="width: 60px; padding: 2px 4px; font-size: 12px;">
                     </div>
-                    <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer; color: var(--text-muted);">
-                        <input type="checkbox" id="singleTaskIgnoreWeekends" checked style="margin: 0;">
-                        <span>Ignore Weekends</span>
-                    </label>
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
                     <input type="text" id="singleTaskNotes" placeholder="Notes / Description (optional)" style="flex-grow: 1; padding: 4px; box-sizing: border-box; background-color: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; font-size: 13px;">
@@ -1123,27 +1154,107 @@
                         <!-- Colored dots populated dynamically -->
                     </div>
                 </div>
-                <button onclick="addSingleTask()" class="btn-success" style="width: 100%; margin-top: 10px;">Add Daily Task</button>
             </div>
     
             <!-- Apply Template Section -->
-            <div class="modal-section">
+            <div id="dayModalTemplateSection" class="modal-section">
                 <div class="modal-section-title">Apply Template (Multi-Day)</div>
                 <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <select id="modalTemplateSelect" style="width: 100%;">
+                    <select id="modalTemplateSelect" onchange="handleTemplateSelectChange()" style="width: 100%;">
                         <option value="">-- Select a Template --</option>
                     </select>
-                    <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;">
-                        <input type="checkbox" id="modalSkipWeekends" checked>
-                        <span>Skip weekends (Sat/Sun) by default</span>
-                    </label>
-                    <button onclick="applyTemplateAtDate()" class="btn-success">Apply Template Starting Today</button>
                 </div>
             </div>
+
+            <!-- Advanced Scheduling & Recurrence Options -->
+            <div class="modal-section" style="border-top: 1px dashed var(--border-color); padding-top: 15px; margin-top: 15px;">
+                <div class="modal-section-title" style="display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; margin-bottom: 0;" onclick="toggleAdvancedScheduling()">
+                    <span>📅 Advanced Scheduling & Recurrence</span>
+                    <span id="advSchedToggleArrow" style="transition: transform 0.2s;">▼</span>
+                </div>
+                
+                <div id="advSchedOptionsContainer" style="display: none; margin-top: 15px; font-size: 13px;">
+                    <!-- Weekend behavior -->
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-weight: bold; cursor: pointer;">
+                            <input type="checkbox" id="modalIncludeWeekends" style="margin: 0;">
+                            <span>Include Weekends (off by default)</span>
+                        </label>
+                    </div>
+                    
+                    <div style="margin-bottom: 12px;">
+                        <label for="modalOccurrenceType" style="display: block; font-weight: bold; margin-bottom: 5px;">Event Pattern:</label>
+                        <select id="modalOccurrenceType" onchange="toggleModalOccurrenceType()" style="width: 100%; padding: 6px; box-sizing: border-box; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
+                            <option value="single">Single Event / Run</option>
+                            <option value="multiple">Multiple Recurring Events</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Recurring options section (conditionally displayed) -->
+                    <div id="modalSchedRecurringSection" style="display: none; margin-bottom: 15px; padding-top: 10px; border-top: 1px dashed var(--border-color);">
+                        <div style="margin-bottom: 12px;">
+                            <label style="display: block; font-weight: bold; margin-bottom: 5px;">Repeat Frequency:</label>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <span>Every</span>
+                                <input type="number" id="modalSchedRepeatValue" min="1" value="1" style="width: 70px; padding: 6px; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box;">
+                                <select id="modalSchedRepeatUnit" style="flex-grow: 1; padding: 6px; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
+                                    <option value="Days">Days</option>
+                                    <option value="Weeks" selected>Weeks</option>
+                                    <option value="Months">Months</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-bottom: 12px;">
+                            <label style="display: block; font-weight: bold; margin-bottom: 5px;">Grouping Behavior:</label>
+                            <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px;">
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                    <input type="radio" name="modalSchedGrouping" id="modalSchedGroupingSeparate" value="separate" checked>
+                                    <span>Classed as Separate Events (Default)</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                    <input type="radio" name="modalSchedGrouping" id="modalSchedGroupingSame" value="same">
+                                    <span>Classed as Same/Linked Event</span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label style="display: block; font-weight: bold; margin-bottom: 5px;">Stop Repeating:</label>
+                            <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                    <input type="radio" name="modalSchedStopType" id="modalSchedStopInstances" value="instances" checked onchange="toggleModalStopFields()">
+                                    <span>After</span>
+                                    <input type="number" id="modalSchedMaxInstances" min="1" value="10" style="width: 70px; padding: 4px; margin: 0 4px; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box;">
+                                    <span>occurrences</span>
+                                </label>
+                                
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                    <input type="radio" name="modalSchedStopType" id="modalSchedStopDuration" value="duration" onchange="toggleModalStopFields()">
+                                    <span>For a duration of:</span>
+                                    <select id="modalSchedDurationLimit" onchange="toggleModalStopFields()" style="padding: 4px; margin-left: 4px; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
+                                        <option value="12m">12 Months</option>
+                                        <option value="end_year">Until end of current year</option>
+                                        <option value="custom">Custom Date</option>
+                                    </select>
+                                </label>
+                                
+                                <div id="modalSchedCustomDateContainer" style="display: none; padding-left: 20px; margin-top: 8px;">
+                                    <label for="modalSchedCustomEndDate" style="margin-right: 8px;">End Date:</label>
+                                    <input type="date" id="modalSchedCustomEndDate" style="padding: 4px; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
 
-        <div class="modal-buttons">
-            <button onclick="closeDayModal()" class="btn-secondary">Close</button>
+        <div class="modal-buttons" style="display: flex; gap: 10px; margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border-color); justify-content: flex-end; align-items: center; width: 100%; box-sizing: border-box;">
+            <button id="modalApplyTemplateBtn" onclick="applyTemplateAtDate()" class="btn-success" disabled style="padding: 8px 16px; display: none;">Add Template Task</button>
+            <button id="modalAddCustomBtn" onclick="addSingleTask()" class="btn-success" style="padding: 8px 16px; display: none;">Add Custom Task</button>
+            <button onclick="closeDayModal()" class="btn-secondary" style="padding: 8px 16px;">Close</button>
         </div>
     </div>
 </div>
@@ -1316,222 +1427,7 @@
     </div>
 </div>
 
-<!-- Task Scheduling Options Modal -->
-<div id="addTaskOptionsModal" class="modal-overlay" style="display: none; z-index: 2200;">
-    <div class="modal-box" style="width: 440px; text-align: left;">
-        <h2 style="margin-top: 0; color: var(--accent-primary); display: flex; align-items: center; gap: 8px;">
-            📅 Task Scheduling Options
-        </h2>
-        
-        <div class="modal-section" style="border-top: none; padding-top: 0; margin-top: 0;">
-            <!-- Weekend behavior -->
-            <label style="display: flex; align-items: center; gap: 8px; font-weight: bold; cursor: pointer; margin-bottom: 15px;">
-                <input type="checkbox" id="schedIncludeWeekends" style="margin: 0;">
-                <span>Include Weekends (off by default)</span>
-            </label>
-        </div>
-        
-        <div class="modal-section" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-color);">
-            <label for="schedOccurrenceType" style="display: block; font-weight: bold; margin-bottom: 5px;">Event Pattern:</label>
-            <select id="schedOccurrenceType" onchange="toggleSchedRecurringSections()" style="width: 100%; padding: 6px; box-sizing: border-box;">
-                <option value="single">Single Event / Run</option>
-                <option value="multiple">Multiple Recurring Events</option>
-            </select>
-        </div>
-        
-        <!-- Recurring options section (conditionally displayed) -->
-        <div id="schedRecurringSection" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--border-color);">
-            <div style="margin-bottom: 12px;">
-                <label style="display: block; font-weight: bold; margin-bottom: 5px;">Repeat Frequency:</label>
-                <div style="display: flex; gap: 10px; align-items: center;">
-                    <span>Every</span>
-                    <input type="number" id="schedRepeatValue" min="1" value="1" style="width: 70px; padding: 6px;">
-                    <select id="schedRepeatUnit" style="flex-grow: 1; padding: 6px;">
-                        <option value="Days">Days</option>
-                        <option value="Weeks" selected>Weeks</option>
-                        <option value="Months">Months</option>
-                    </select>
-                </div>
-            </div>
-            
-            <div style="margin-bottom: 12px;">
-                <label style="display: block; font-weight: bold; margin-bottom: 5px;">Grouping Behavior:</label>
-                <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px;">
-                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                        <input type="radio" name="schedGrouping" id="schedGroupingSeparate" value="separate" checked>
-                        <span>Classed as Separate Events (Default)</span>
-                    </label>
-                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                        <input type="radio" name="schedGrouping" id="schedGroupingSame" value="same">
-                        <span>Classed as Same/Linked Event</span>
-                    </label>
-                </div>
-            </div>
-            
-            <div>
-                <label style="display: block; font-weight: bold; margin-bottom: 5px;">Stop Repeating:</label>
-                <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
-                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                        <input type="radio" name="schedStopType" id="schedStopInstances" value="instances" checked onchange="toggleSchedStopFields()">
-                        <span>After</span>
-                        <input type="number" id="schedMaxInstances" min="1" value="10" style="width: 70px; padding: 4px; margin: 0 4px;">
-                        <span>occurrences</span>
-                    </label>
-                    
-                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                        <input type="radio" name="schedStopType" id="schedStopDuration" value="duration" onchange="toggleSchedStopFields()">
-                        <span>For a duration of:</span>
-                        <select id="schedDurationLimit" onchange="toggleSchedStopFields()" style="padding: 4px; margin-left: 4px;">
-                            <option value="12m">12 Months</option>
-                            <option value="end_year">Until end of current year</option>
-                            <option value="custom">Custom Date</option>
-                        </select>
-                    </label>
-                    
-                    <div id="schedCustomDateContainer" style="display: none; padding-left: 20px;">
-                        <label for="schedCustomEndDate" style="margin-right: 8px;">End Date:</label>
-                        <input type="date" id="schedCustomEndDate" style="padding: 4px;">
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="modal-buttons" style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 15px;">
-            <button id="schedCancelBtn" class="btn-secondary" style="padding: 8px 16px;">Cancel</button>
-            <button id="schedConfirmBtn" class="btn-success" style="padding: 8px 16px;">Confirm</button>
-        </div>
-    </div>
-</div>
 
-<!-- Manual Task Creation Modal -->
-<div id="manualTaskModal" class="modal-overlay" style="display: none; z-index: 2200;">
-    <div class="modal-box" style="width: 480px; text-align: left;">
-        <h2 style="margin-top: 0; color: var(--accent-primary); display: flex; align-items: center; gap: 8px;">
-            ➕ Add Task Manually
-        </h2>
-        
-        <div id="manualTaskModalScrollContainer" style="max-height: 460px; overflow-y: auto; padding-right: 8px; margin-bottom: 15px;">
-            <!-- Task Details Section -->
-            <h3 style="margin-top: 0; color: var(--accent-secondary); font-size: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 5px;">📝 Task Details</h3>
-            
-            <div style="margin-bottom: 10px;">
-                <label for="manualTaskName" style="display: block; font-weight: bold; margin-bottom: 3px;">Task Name:</label>
-                <input type="text" id="manualTaskName" placeholder="Enter task name..." style="width: 100%; padding: 6px; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box;">
-            </div>
-            
-            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                <div style="flex: 1;">
-                    <label for="manualTaskDuration" style="display: block; font-weight: bold; margin-bottom: 3px;">Duration:</label>
-                    <select id="manualTaskDuration" onchange="toggleManualTaskDurationFields()" style="width: 100%; padding: 6px; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
-                        <option value="All Day">All Day</option>
-                        <option value="AM">AM</option>
-                        <option value="PM">PM</option>
-                        <option value="Multi-Day">Multi-Day</option>
-                    </select>
-                </div>
-                <div id="manualTaskNumDaysContainer" style="display: none; width: 100px;">
-                    <label for="manualTaskNumDays" style="display: block; font-weight: bold; margin-bottom: 3px;">Days:</label>
-                    <input type="number" id="manualTaskNumDays" value="5" min="2" style="width: 100%; padding: 6px; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box;">
-                </div>
-            </div>
-            
-            <div style="margin-bottom: 10px;">
-                <label for="manualTaskCategory" style="display: block; font-weight: bold; margin-bottom: 3px;">Category:</label>
-                <select id="manualTaskCategory" style="width: 100%; padding: 6px; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;"></select>
-            </div>
-            
-            <div style="margin-bottom: 10px;">
-                <label style="display: block; font-weight: bold; margin-bottom: 3px;">Color:</label>
-                <div id="manualTaskColorSelector" class="color-selector"></div>
-            </div>
-            
-            <div style="margin-bottom: 20px;">
-                <label for="manualTaskNotes" style="display: block; font-weight: bold; margin-bottom: 3px;">Notes:</label>
-                <textarea id="manualTaskNotes" placeholder="Optional notes..." rows="2" style="width: 100%; padding: 6px; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
-            </div>
-            
-            <!-- Scheduling Options Section -->
-            <h3 style="color: var(--accent-secondary); font-size: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 5px; margin-top: 20px;">📅 Scheduling Options</h3>
-            
-            <div style="margin-bottom: 15px;">
-                <label style="display: flex; align-items: center; gap: 8px; font-weight: bold; cursor: pointer;">
-                    <input type="checkbox" id="manualSchedIncludeWeekends" style="margin: 0;">
-                    <span>Include Weekends (off by default)</span>
-                </label>
-            </div>
-            
-            <div style="margin-bottom: 15px;">
-                <label for="manualSchedOccurrenceType" style="display: block; font-weight: bold; margin-bottom: 5px;">Event Pattern:</label>
-                <select id="manualSchedOccurrenceType" onchange="toggleManualSchedRecurringSections()" style="width: 100%; padding: 6px; box-sizing: border-box; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
-                    <option value="single">Single Event / Run</option>
-                    <option value="multiple">Multiple Recurring Events</option>
-                </select>
-            </div>
-            
-            <!-- Recurring options section (conditionally displayed) -->
-            <div id="manualSchedRecurringSection" style="display: none; margin-bottom: 15px; padding-top: 10px; border-top: 1px dashed var(--border-color);">
-                <div style="margin-bottom: 12px;">
-                    <label style="display: block; font-weight: bold; margin-bottom: 5px;">Repeat Frequency:</label>
-                    <div style="display: flex; gap: 10px; align-items: center;">
-                        <span>Every</span>
-                        <input type="number" id="manualSchedRepeatValue" min="1" value="1" style="width: 70px; padding: 6px; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
-                        <select id="manualSchedRepeatUnit" style="flex-grow: 1; padding: 6px; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
-                            <option value="Days">Days</option>
-                            <option value="Weeks" selected>Weeks</option>
-                            <option value="Months">Months</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 12px;">
-                    <label style="display: block; font-weight: bold; margin-bottom: 5px;">Grouping Behavior:</label>
-                    <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px;">
-                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                            <input type="radio" name="manualSchedGrouping" id="manualSchedGroupingSeparate" value="separate" checked>
-                            <span>Classed as Separate Events (Default)</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                            <input type="radio" name="manualSchedGrouping" id="manualSchedGroupingSame" value="same">
-                            <span>Classed as Same/Linked Event</span>
-                        </label>
-                    </div>
-                </div>
-                
-                <div>
-                    <label style="display: block; font-weight: bold; margin-bottom: 5px;">Stop Repeating:</label>
-                    <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
-                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                            <input type="radio" name="manualSchedStopType" id="manualSchedStopInstances" value="instances" checked onchange="toggleManualSchedStopFields()">
-                            <span>After</span>
-                            <input type="number" id="manualSchedMaxInstances" min="1" value="10" style="width: 70px; padding: 4px; margin: 0 4px; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
-                            <span>occurrences</span>
-                        </label>
-                        
-                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                            <input type="radio" name="manualSchedStopType" id="manualSchedStopDuration" value="duration" onchange="toggleManualSchedStopFields()">
-                            <span>For a duration of:</span>
-                            <select id="manualSchedDurationLimit" onchange="toggleManualSchedStopFields()" style="padding: 4px; margin-left: 4px; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
-                                <option value="12m">12 Months</option>
-                                <option value="end_year">Until end of current year</option>
-                                <option value="custom">Custom Date</option>
-                            </select>
-                        </label>
-                        
-                        <div id="manualSchedCustomDateContainer" style="display: none; padding-left: 20px;">
-                            <label for="manualSchedCustomEndDate" style="margin-right: 8px;">End Date:</label>
-                            <input type="date" id="manualSchedCustomEndDate" style="padding: 4px; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px;">
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="modal-buttons" style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--border-color); padding-top: 15px;">
-            <button id="manualCancelBtn" class="btn-secondary" style="padding: 8px 16px;">Cancel</button>
-            <button id="manualConfirmBtn" class="btn-success" style="padding: 8px 16px;">Confirm</button>
-        </div>
-    </div>
-</div>
 
 <script>
     // State
@@ -1544,278 +1440,137 @@
     
     let databaseCategories = [];
 
-    function toggleSchedRecurringSections() {
-        const type = document.getElementById('schedOccurrenceType').value;
-        document.getElementById('schedRecurringSection').style.display = (type === 'multiple') ? 'block' : 'none';
+    function toggleAdvancedScheduling(expand = null) {
+        const container = document.getElementById('advSchedOptionsContainer');
+        const arrow = document.getElementById('advSchedToggleArrow');
+        if (!container || !arrow) return;
+        
+        let shouldExpand = expand;
+        if (shouldExpand === null) {
+            shouldExpand = container.style.display === 'none';
+        }
+        
+        if (shouldExpand) {
+            container.style.display = 'block';
+            arrow.style.transform = 'rotate(180deg)';
+        } else {
+            container.style.display = 'none';
+            arrow.style.transform = 'rotate(0deg)';
+        }
+    }
+
+    function handleTemplateSelectChange() {
+        const select = document.getElementById('modalTemplateSelect');
+        const btn = document.getElementById('modalApplyTemplateBtn');
+        if (select && btn) {
+            btn.disabled = !select.value;
+        }
+    }
+    window.handleTemplateSelectChange = handleTemplateSelectChange;
+
+    function setDayModalMode(mode) {
+        const tabCustom = document.getElementById('tabCustomTask');
+        const tabTemplate = document.getElementById('tabTemplate');
+        
+        const sectionCustom = document.getElementById('dayModalCustomSection');
+        const sectionTemplate = document.getElementById('dayModalTemplateSection');
+        
+        const btnApply = document.getElementById('modalApplyTemplateBtn');
+        const btnCustom = document.getElementById('modalAddCustomBtn');
+        
+        if (!tabCustom || !tabTemplate) return;
+        
+        if (mode === 'custom') {
+            tabCustom.style.background = 'var(--accent-primary)';
+            tabCustom.style.color = '#fff';
+            tabTemplate.style.background = 'none';
+            tabTemplate.style.color = 'var(--text-muted)';
+            
+            if (sectionCustom) sectionCustom.style.display = 'block';
+            if (sectionTemplate) sectionTemplate.style.display = 'none';
+            
+            if (btnApply) btnApply.style.display = 'none';
+            if (btnCustom) btnCustom.style.display = isAdmin ? 'inline-block' : 'none';
+        } else {
+            tabTemplate.style.background = 'var(--accent-primary)';
+            tabTemplate.style.color = '#fff';
+            tabCustom.style.background = 'none';
+            tabCustom.style.color = 'var(--text-muted)';
+            
+            if (sectionCustom) sectionCustom.style.display = 'none';
+            if (sectionTemplate) sectionTemplate.style.display = 'block';
+            
+            if (btnApply) btnApply.style.display = isAdmin ? 'inline-block' : 'none';
+            if (btnCustom) btnCustom.style.display = 'none';
+        }
+    }
+    window.setDayModalMode = setDayModalMode;
+    
+    function toggleModalOccurrenceType() {
+        const type = document.getElementById('modalOccurrenceType').value;
+        document.getElementById('modalSchedRecurringSection').style.display = (type === 'multiple') ? 'block' : 'none';
     }
     
-    function toggleSchedStopFields() {
-        const stopType = document.querySelector('input[name="schedStopType"]:checked').value;
-        const instancesInput = document.getElementById('schedMaxInstances');
-        const durationSelect = document.getElementById('schedDurationLimit');
+    function toggleModalStopFields() {
+        const stopType = document.querySelector('input[name="modalSchedStopType"]:checked').value;
+        const instancesInput = document.getElementById('modalSchedMaxInstances');
+        const durationSelect = document.getElementById('modalSchedDurationLimit');
         
         instancesInput.disabled = (stopType !== 'instances');
         durationSelect.disabled = (stopType !== 'duration');
         
         const isCustomDate = (stopType === 'duration' && durationSelect.value === 'custom');
-        document.getElementById('schedCustomDateContainer').style.display = isCustomDate ? 'block' : 'none';
-    }
-
-    function toggleManualTaskDurationFields() {
-        const duration = document.getElementById('manualTaskDuration').value;
-        document.getElementById('manualTaskNumDaysContainer').style.display = (duration === 'Multi-Day') ? 'block' : 'none';
+        document.getElementById('modalSchedCustomDateContainer').style.display = isCustomDate ? 'block' : 'none';
     }
     
-    function toggleManualSchedRecurringSections() {
-        const type = document.getElementById('manualSchedOccurrenceType').value;
-        document.getElementById('manualSchedRecurringSection').style.display = (type === 'multiple') ? 'block' : 'none';
+    function resetAdvancedSchedulingDefaults() {
+        document.getElementById('modalIncludeWeekends').checked = false;
+        document.getElementById('modalOccurrenceType').value = 'single';
+        document.getElementById('modalSchedRepeatValue').value = 1;
+        document.getElementById('modalSchedRepeatUnit').value = 'Weeks';
+        document.getElementById('modalSchedGroupingSeparate').checked = true;
+        document.getElementById('modalSchedStopInstances').checked = true;
+        document.getElementById('modalSchedMaxInstances').value = 10;
+        document.getElementById('modalSchedDurationLimit').value = '12m';
+        document.getElementById('modalSchedCustomEndDate').value = '';
+        
+        toggleAdvancedScheduling(false); // Collapsed by default
+        toggleModalOccurrenceType();
+        toggleModalStopFields();
     }
     
-    function toggleManualSchedStopFields() {
-        const stopType = document.querySelector('input[name="manualSchedStopType"]:checked').value;
-        const instancesInput = document.getElementById('manualSchedMaxInstances');
-        const durationSelect = document.getElementById('manualSchedDurationLimit');
+    function getUnifiedSchedulingOptions() {
+        const includeWeekends = document.getElementById('modalIncludeWeekends').checked;
+        const isRecurring = document.getElementById('modalOccurrenceType').value === 'multiple';
+        const repeatValue = parseInt(document.getElementById('modalSchedRepeatValue').value) || 1;
+        const repeatUnit = document.getElementById('modalSchedRepeatUnit').value;
+        const sameEvent = document.getElementById('modalSchedGroupingSame').checked;
+        const limitType = document.querySelector('input[name="modalSchedStopType"]:checked').value;
+        const maxInstances = parseInt(document.getElementById('modalSchedMaxInstances').value) || 10;
+        const durationLimit = document.getElementById('modalSchedDurationLimit').value;
+        const customEndDate = document.getElementById('modalSchedCustomEndDate').value;
         
-        instancesInput.disabled = (stopType !== 'instances');
-        durationSelect.disabled = (stopType !== 'duration');
+        if (isRecurring && limitType === 'duration' && durationLimit === 'custom' && !customEndDate) {
+            showToast("Please specify a custom end date in advanced options.", "error");
+            return null;
+        }
         
-        const isCustomDate = (stopType === 'duration' && durationSelect.value === 'custom');
-        document.getElementById('manualSchedCustomDateContainer').style.display = isCustomDate ? 'block' : 'none';
+        return {
+            includeWeekends,
+            isRecurring,
+            repeatValue,
+            repeatUnit,
+            sameEvent,
+            limitType,
+            maxInstances,
+            durationLimit,
+            customEndDate
+        };
     }
 
-    window.toggleManualTaskDurationFields = toggleManualTaskDurationFields;
-    window.toggleManualSchedRecurringSections = toggleManualSchedRecurringSections;
-    window.toggleManualSchedStopFields = toggleManualSchedStopFields;
-
-    let selectedManualTaskColor = 'color-1';
-
-    function promptManualTaskOptions(dateStr) {
-        return new Promise((resolve) => {
-            const modal = document.getElementById('manualTaskModal');
-            
-            // Scroll container to top
-            const scrollContainer = document.getElementById('manualTaskModalScrollContainer');
-            if (scrollContainer) scrollContainer.scrollTop = 0;
-            
-            // Set Task Details defaults
-            document.getElementById('manualTaskName').value = '';
-            document.getElementById('manualTaskDuration').value = 'All Day';
-            document.getElementById('manualTaskNumDays').value = 5;
-            
-            // Populate categories dropdown
-            const categorySelect = document.getElementById('manualTaskCategory');
-            categorySelect.innerHTML = '<option value="">None</option>' + databaseCategories.map(cat => `
-                <option value="${escapeHTML(cat)}">${escapeHTML(cat)}</option>
-            `).join('');
-            categorySelect.value = '';
-            
-            // Render Color Selector
-            selectedManualTaskColor = 'color-1';
-            renderColorDots('manualTaskColorSelector', 'selectedManualTaskColor');
-            
-            document.getElementById('manualTaskNotes').value = '';
-            
-            // Set Scheduling defaults
-            document.getElementById('manualSchedIncludeWeekends').checked = false;
-            document.getElementById('manualSchedOccurrenceType').value = 'single';
-            document.getElementById('manualSchedRepeatValue').value = 1;
-            document.getElementById('manualSchedRepeatUnit').value = 'Weeks';
-            document.getElementById('manualSchedGroupingSeparate').checked = true;
-            document.getElementById('manualSchedStopInstances').checked = true;
-            document.getElementById('manualSchedMaxInstances').value = 10;
-            document.getElementById('manualSchedDurationLimit').value = '12m';
-            document.getElementById('manualSchedCustomEndDate').value = '';
-            
-            toggleManualTaskDurationFields();
-            toggleManualSchedRecurringSections();
-            toggleManualSchedStopFields();
-            
-            const confirmBtn = document.getElementById('manualConfirmBtn');
-            const cancelBtn = document.getElementById('manualCancelBtn');
-            
-            confirmBtn.onclick = () => {
-                const taskName = document.getElementById('manualTaskName').value.trim();
-                if (!taskName) {
-                    showToast("Please enter a task name.", "error");
-                    return;
-                }
-                
-                const duration = document.getElementById('manualTaskDuration').value;
-                const numDays = parseInt(document.getElementById('manualTaskNumDays').value) || 2;
-                const category = document.getElementById('manualTaskCategory').value || null;
-                const notes = document.getElementById('manualTaskNotes').value.trim() || null;
-                
-                // Scheduling
-                const includeWeekends = document.getElementById('manualSchedIncludeWeekends').checked;
-                const isRecurring = document.getElementById('manualSchedOccurrenceType').value === 'multiple';
-                const repeatValue = parseInt(document.getElementById('manualSchedRepeatValue').value) || 1;
-                const repeatUnit = document.getElementById('manualSchedRepeatUnit').value;
-                const sameEvent = document.getElementById('manualSchedGroupingSame').checked;
-                const limitType = document.querySelector('input[name="manualSchedStopType"]:checked').value;
-                const maxInstances = parseInt(document.getElementById('manualSchedMaxInstances').value) || 10;
-                const durationLimit = document.getElementById('manualSchedDurationLimit').value;
-                const customEndDate = document.getElementById('manualSchedCustomEndDate').value;
-                
-                if (isRecurring && limitType === 'duration' && durationLimit === 'custom' && !customEndDate) {
-                    showToast("Please specify a custom end date.", "error");
-                    return;
-                }
-                
-                modal.style.display = 'none';
-                resolve({
-                    taskDetails: {
-                        task_name: taskName,
-                        duration,
-                        numDays,
-                        category,
-                        color: selectedManualTaskColor,
-                        notes
-                    },
-                    schedulingOptions: {
-                        includeWeekends,
-                        isRecurring,
-                        repeatValue,
-                        repeatUnit,
-                        sameEvent,
-                        limitType,
-                        maxInstances,
-                        durationLimit,
-                        customEndDate
-                    }
-                });
-            };
-            
-            cancelBtn.onclick = () => {
-                modal.style.display = 'none';
-                resolve(null);
-            };
-            
-            modal.style.display = 'flex';
-        });
-    }
-
-    async function addManualTaskAtDate(dateStr) {
-        const result = await promptManualTaskOptions(dateStr);
-        if (!result) {
-            showToast("Manual task addition cancelled.", "info");
-            return;
-        }
-
-        const { taskDetails, schedulingOptions } = result;
-        const isMultiDay = (taskDetails.duration === 'Multi-Day');
-        const durationDays = isMultiDay ? taskDetails.numDays : 1;
-
-        const occurrences = generateSchedulingDates(dateStr, durationDays, schedulingOptions);
-
-        const tasksToInsert = [];
-        const sameEvent = schedulingOptions.sameEvent;
-        const singleGroupId = sameEvent ? (Date.now().toString() + Math.random().toString(36).substring(2, 7)) : null;
-
-        for (let i = 0; i < occurrences.length; i++) {
-            const runDates = occurrences[i];
-            const runGroupId = sameEvent ? singleGroupId : (runDates.length > 1 ? (Date.now().toString() + Math.random().toString(36).substring(2, 7)) : null);
-            
-            for (const d of runDates) {
-                tasksToInsert.push({
-                    date: d,
-                    task_name: taskDetails.task_name,
-                    duration: isMultiDay ? 'All Day' : taskDetails.duration,
-                    color: taskDetails.color,
-                    rosterType: currentRoster,
-                    category: taskDetails.category,
-                    notes: taskDetails.notes,
-                    group_id: runGroupId
-                });
-            }
-        }
-
-        try {
-            const res = await fetch('/api/tasks/batch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tasks: tasksToInsert })
-            });
-            if (res.ok) {
-                showToast(`Manual task "${taskDetails.task_name}" scheduled successfully.`, "success");
-                loadAnnualData();
-            } else {
-                showToast("Failed to schedule manual task.", "error");
-            }
-        } catch (err) {
-            console.error(err);
-            showToast("Network error scheduling manual task.", "error");
-        }
-    }
-
-    function triggerContextAddManual() {
-        closeContextMenu();
-        if (activeContextMenuDateStr) {
-            addManualTaskAtDate(activeContextMenuDateStr);
-        }
-    }
-
-    window.toggleSchedRecurringSections = toggleSchedRecurringSections;
-    window.toggleSchedStopFields = toggleSchedStopFields;
-
-    function promptSchedulingOptions(taskName, durationDays) {
-        return new Promise((resolve) => {
-            const modal = document.getElementById('addTaskOptionsModal');
-            
-            // Set defaults
-            document.getElementById('schedIncludeWeekends').checked = false;
-            document.getElementById('schedOccurrenceType').value = 'single';
-            document.getElementById('schedRepeatValue').value = 1;
-            document.getElementById('schedRepeatUnit').value = 'Weeks';
-            document.getElementById('schedGroupingSeparate').checked = true;
-            document.getElementById('schedStopInstances').checked = true;
-            document.getElementById('schedMaxInstances').value = 10;
-            document.getElementById('schedDurationLimit').value = '12m';
-            document.getElementById('schedCustomEndDate').value = '';
-            
-            toggleSchedRecurringSections();
-            toggleSchedStopFields();
-            
-            const confirmBtn = document.getElementById('schedConfirmBtn');
-            const cancelBtn = document.getElementById('schedCancelBtn');
-            
-            confirmBtn.onclick = () => {
-                const includeWeekends = document.getElementById('schedIncludeWeekends').checked;
-                const isRecurring = document.getElementById('schedOccurrenceType').value === 'multiple';
-                const repeatValue = parseInt(document.getElementById('schedRepeatValue').value) || 1;
-                const repeatUnit = document.getElementById('schedRepeatUnit').value;
-                const sameEvent = document.getElementById('schedGroupingSame').checked;
-                const limitType = document.querySelector('input[name="schedStopType"]:checked').value;
-                const maxInstances = parseInt(document.getElementById('schedMaxInstances').value) || 10;
-                const durationLimit = document.getElementById('schedDurationLimit').value;
-                const customEndDate = document.getElementById('schedCustomEndDate').value;
-                
-                if (isRecurring && limitType === 'duration' && durationLimit === 'custom' && !customEndDate) {
-                    showToast("Please specify a custom end date.", "error");
-                    return;
-                }
-                
-                modal.style.display = 'none';
-                resolve({
-                    includeWeekends,
-                    isRecurring,
-                    repeatValue,
-                    repeatUnit,
-                    sameEvent,
-                    limitType,
-                    maxInstances,
-                    durationLimit,
-                    customEndDate
-                });
-            };
-            
-            cancelBtn.onclick = () => {
-                modal.style.display = 'none';
-                resolve(null);
-            };
-            
-            modal.style.display = 'flex';
-        });
-    }
+    window.toggleAdvancedScheduling = toggleAdvancedScheduling;
+    window.toggleModalOccurrenceType = toggleModalOccurrenceType;
+    window.toggleModalStopFields = toggleModalStopFields;
 
     function generateSchedulingDates(startDateStr, durationDays, options) {
         const {
@@ -2891,54 +2646,7 @@
 
     async function handleTaskDrop(dateStr, template) {
         if (!template) return;
-        
-        const options = await promptSchedulingOptions(template.task_name, template.duration);
-        if (!options) {
-            showToast("Scheduling cancelled.", "info");
-            return;
-        }
-        
-        const occurrences = generateSchedulingDates(dateStr, template.duration, options);
-        
-        const tasksToInsert = [];
-        const sameEvent = options.sameEvent;
-        const singleGroupId = sameEvent ? (Date.now().toString() + Math.random().toString(36).substring(2, 7)) : null;
-        
-        for (let i = 0; i < occurrences.length; i++) {
-            const runDates = occurrences[i];
-            const runGroupId = sameEvent ? singleGroupId : (runDates.length > 1 ? (Date.now().toString() + Math.random().toString(36).substring(2, 7)) : null);
-            
-            for (const d of runDates) {
-                tasksToInsert.push({
-                    date: d,
-                    task_name: template.task_name,
-                    duration: 'All Day',
-                    color: template.color,
-                    rosterType: currentRoster,
-                    abbreviation: template.abbreviation,
-                    category: template.category,
-                    notes: template.notes || null,
-                    group_id: runGroupId
-                });
-            }
-        }
-        
-        try {
-            const res = await fetch('/api/tasks/batch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tasks: tasksToInsert })
-            });
-            if (res.ok) {
-                showToast(`Scheduled template "${template.task_name}" successfully.`, "success");
-                loadAnnualData();
-            } else {
-                showToast("Failed to schedule template.", "error");
-            }
-        } catch (err) {
-            console.error(err);
-            showToast("Network error scheduling template.", "error");
-        }
+        openDayModal(dateStr, null, true, template.id);
     }
 
     // Interval checker helper during dragover
@@ -3030,67 +2738,119 @@
             }
         }
         
-        const originalStartDates = new Set();
         const runs = groupTaskRuns(instances);
         const limit = targetInterval || 6; 
-
-        if (draggedTask) {
-            if (draggedTask.group_id) {
-                const group = allTasks.filter(t => t.group_id === draggedTask.group_id);
-                if (group.length > 0) {
-                    group.sort((a, b) => a.date.localeCompare(b.date));
-                    originalStartDates.add(group[0].date);
-                }
-            } else {
-                originalStartDates.add(draggedTask.date);
-            }
-        } else {
-            runs.forEach(r => originalStartDates.add(r.startDate));
-        }
+        const limitDays = limit * 7;
+        
+        const gapCandidates = {}; // gapKey -> { acceptable: [], violation: [] }
         
         document.querySelectorAll('.day-cell[data-date]').forEach(dayCell => {
             const dateStr = dayCell.getAttribute('data-date');
+            
+            // Skip cells that already contain a task of this type
+            const hasInstanceOnDate = instances.some(t => t.date === dateStr);
+            if (hasInstanceOnDate) return;
+            
             const olderRuns = runs.filter(r => r.startDate < dateStr);
             const futureRuns = runs.filter(r => r.startDate > dateStr);
             
             let prevAcceptable = true;
             let nextAcceptable = true;
+            let P = null;
+            let F = null;
+            let latestRun = null;
+            let earliestNextRun = null;
             
-            if (originalStartDates.has(dateStr)) {
-                // If it is the original scheduled start date of this task/event run, it is always acceptable!
-                prevAcceptable = true;
-                nextAcceptable = true;
-            } else {
-                if (olderRuns.length > 0) {
-                    const latestRun = olderRuns[olderRuns.length - 1];
-                    const prevDate = new Date(latestRun.startDate + 'T00:00:00');
-                    const currDate = new Date(dateStr + 'T00:00:00');
-                    const diffDays = Math.round((currDate - prevDate) / (1000 * 60 * 60 * 24));
-                    const weeks = diffDays / 7;
-                    if (weeks > limit) prevAcceptable = false;
-                }
-                
-                if (futureRuns.length > 0) {
-                    const earliestNextRun = futureRuns[0];
-                    const nextDate = new Date(earliestNextRun.startDate + 'T00:00:00');
-                    const currDate = new Date(dateStr + 'T00:00:00');
-                    const diffDays = Math.round((nextDate - currDate) / (1000 * 60 * 60 * 24));
-                    const weeks = diffDays / 7;
-                    if (weeks > limit) nextAcceptable = false;
-                }
+            if (olderRuns.length > 0) {
+                latestRun = olderRuns[olderRuns.length - 1];
+                const prevDate = new Date(latestRun.startDate + 'T00:00:00');
+                const currDate = new Date(dateStr + 'T00:00:00');
+                P = Math.round((currDate - prevDate) / (1000 * 60 * 60 * 24));
+                const weeks = P / 7;
+                if (weeks > limit) prevAcceptable = false;
+            }
+            
+            if (futureRuns.length > 0) {
+                earliestNextRun = futureRuns[0];
+                const nextDate = new Date(earliestNextRun.startDate + 'T00:00:00');
+                const currDate = new Date(dateStr + 'T00:00:00');
+                F = Math.round((nextDate - currDate) / (1000 * 60 * 60 * 24));
+                const weeks = F / 7;
+                if (weeks > limit) nextAcceptable = false;
             }
             
             if (prevAcceptable && nextAcceptable) {
                 dayCell.classList.add('drag-acceptable');
+                
+                // Calculate deviation score for optimal spacing ONLY if both preceding and following tasks exist
+                // and the total gap between them is greater than the target limit
+                if (P !== null && F !== null) {
+                    const totalGapDays = P + F;
+                    if (totalGapDays > limitDays) {
+                        const score = Math.abs(P - F);
+                        const gapKey = `${latestRun.startDate}_${earliestNextRun.startDate}`;
+                        if (!gapCandidates[gapKey]) gapCandidates[gapKey] = { acceptable: [], violation: [] };
+                        gapCandidates[gapKey].acceptable.push({ dayCell, score });
+                    }
+                }
             } else {
                 dayCell.classList.add('drag-violation');
+                
+                // Calculate deviation score even if it's a violation, so we can show a blue optimal star if needed
+                if (P !== null && F !== null) {
+                    const totalGapDays = P + F;
+                    if (totalGapDays > limitDays) {
+                        const score = Math.abs(P - F);
+                        const gapKey = `${latestRun.startDate}_${earliestNextRun.startDate}`;
+                        if (!gapCandidates[gapKey]) gapCandidates[gapKey] = { acceptable: [], violation: [] };
+                        gapCandidates[gapKey].violation.push({ dayCell, score });
+                    }
+                }
+            }
+        });
+        
+        // Star the day cell closest to optimal spacing for EACH gap
+        Object.keys(gapCandidates).forEach(gapKey => {
+            const gap = gapCandidates[gapKey];
+            if (gap.acceptable.length > 0) {
+                let minScore = Infinity;
+                gap.acceptable.forEach(c => {
+                    if (c.score < minScore) {
+                        minScore = c.score;
+                    }
+                });
+                
+                let starApplied = false;
+                gap.acceptable.forEach(c => {
+                    if (c.score === minScore && !starApplied) {
+                        c.dayCell.classList.add('drag-optimal');
+                        starApplied = true;
+                    }
+                });
+            } else if (gap.violation.length > 0) {
+                let minScore = Infinity;
+                gap.violation.forEach(c => {
+                    if (c.score < minScore) {
+                        minScore = c.score;
+                    }
+                });
+                
+                let starApplied = false;
+                gap.violation.forEach(c => {
+                    if (c.score === minScore && !starApplied) {
+                        c.dayCell.classList.add('drag-optimal-violation');
+                        c.dayCell.setAttribute('title', 'optimal schedule - required interval not met');
+                        starApplied = true;
+                    }
+                });
             }
         });
     }
 
     function clearCalendarHighlights() {
         document.querySelectorAll('.day-cell').forEach(cell => {
-            cell.classList.remove('drag-acceptable', 'drag-violation');
+            cell.classList.remove('drag-acceptable', 'drag-violation', 'drag-optimal', 'drag-optimal-violation');
+            cell.removeAttribute('title');
         });
     }
 
@@ -3444,18 +3204,19 @@
     }
 
     // --- DAY SCHEDULER MODAL ---
-    function openDayModal(dateStr, dayTasks) {
+    function openDayModal(dateStr, dayTasks = null, autoExpandAdvanced = false, preSelectedTemplateId = null) {
         selectedDateStr = dateStr;
         
         const modal = document.getElementById('dayModal');
         const title = document.getElementById('modalDayTitle');
         title.innerText = `Schedule Rota tasks - ${formatFriendlyDate(dateStr)}`;
 
+        const tasks = dayTasks || allTasks.filter(t => t.date === dateStr);
         const list = document.getElementById('modalDayTasksList');
-        if (dayTasks.length === 0) {
+        if (tasks.length === 0) {
             list.innerHTML = `<div style="color: var(--text-muted); font-size: 13px; font-style: italic; padding: 10px 0;">No tasks scheduled on this day.</div>`;
         } else {
-            list.innerHTML = dayTasks.map(t => `
+            list.innerHTML = tasks.map(t => `
                 <div class="day-task-item ${t.color}" style="display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; align-items: stretch; margin-bottom: 6px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                         <span class="day-task-name">${escapeHTML(t.task_name)} <span class="day-task-meta">(${t.duration})</span></span>
@@ -3475,15 +3236,57 @@
         document.getElementById('singleTaskDuration').value = 'All Day';
         document.getElementById('singleTaskNotes').value = '';
         document.getElementById('singleTaskNumDays').value = 2;
-        document.getElementById('singleTaskIgnoreWeekends').checked = true;
         handleSingleTaskDurationChange('All Day');
         document.getElementById('modalTemplateSelect').value = '';
+        document.getElementById('modalApplyTemplateBtn').disabled = true;
+
+        // Populate category dropdown
+        const categorySelect = document.getElementById('singleTaskCategory');
+        if (categorySelect) {
+            categorySelect.innerHTML = '<option value="">-- None (Other) --</option>' + databaseCategories.map(cat => `
+                <option value="${escapeHTML(cat)}">${escapeHTML(cat)}</option>
+            `).join('');
+            categorySelect.value = '';
+        }
+
+        // Reset advanced scheduling defaults
+        resetAdvancedSchedulingDefaults();
+
+        // Handle pre-selected template (e.g. from drag and drop)
+        if (preSelectedTemplateId !== null) {
+            setDayModalMode('template');
+            const templateSelect = document.getElementById('modalTemplateSelect');
+            if (templateSelect) {
+                templateSelect.value = preSelectedTemplateId;
+                handleTemplateSelectChange();
+            }
+            if (autoExpandAdvanced) {
+                toggleAdvancedScheduling(true);
+            }
+        } else {
+            setDayModalMode('custom');
+            if (autoExpandAdvanced) {
+                toggleAdvancedScheduling(true);
+                setTimeout(() => {
+                    const nameInput = document.getElementById('singleTaskName');
+                    if (nameInput) nameInput.focus();
+                }, 100);
+            }
+        }
 
         // Show/hide admin schedule sections
         document.getElementById('modalDayAdminActions').style.display = isAdmin ? 'block' : 'none';
 
         modal.style.display = 'flex';
     }
+
+    function triggerContextAddManual() {
+        closeContextMenu();
+        if (activeContextMenuDateStr) {
+            openDayModal(activeContextMenuDateStr, null, true);
+        }
+    }
+    window.triggerContextAddManual = triggerContextAddManual;
 
     function closeDayModal() {
         document.getElementById('dayModal').style.display = 'none';
@@ -3517,16 +3320,10 @@
         const numDays = parseInt(document.getElementById('singleTaskNumDays').value) || 2;
         const durationDays = isMultiDay ? numDays : 1;
 
-        // First close day modal so the options splash modal is fully focusable/visible
-        closeDayModal();
+        const options = getUnifiedSchedulingOptions();
+        if (!options) return;
 
-        const options = await promptSchedulingOptions(task_name, durationDays);
-        if (!options) {
-            showToast("Scheduling cancelled.", "info");
-            // Re-open dayModal on cancel
-            openDayModal(selectedDateStr);
-            return;
-        }
+        closeDayModal();
 
         const occurrences = generateSchedulingDates(selectedDateStr, durationDays, options);
 
@@ -3584,14 +3381,10 @@
         const template = templates.find(t => t.id === templateId);
         if (!template) return;
 
-        closeDayModal();
+        const options = getUnifiedSchedulingOptions();
+        if (!options) return;
 
-        const options = await promptSchedulingOptions(template.task_name, template.duration);
-        if (!options) {
-            showToast("Scheduling cancelled.", "info");
-            openDayModal(selectedDateStr);
-            return;
-        }
+        closeDayModal();
 
         const occurrences = generateSchedulingDates(selectedDateStr, template.duration, options);
 
@@ -3899,60 +3692,12 @@
             showCustomConfirm(
                 "⚠️ Spacing Rules Violation",
                 warnMsg,
-                () => executeAddTemplateDirectly(template, activeContextMenuDateStr)
+                () => {
+                    openDayModal(activeContextMenuDateStr, null, true, template.id);
+                }
             );
         } else {
-            executeAddTemplateDirectly(template, activeContextMenuDateStr);
-        }
-    }
-
-    async function executeAddTemplateDirectly(template, selectedDateStr) {
-        const options = await promptSchedulingOptions(template.task_name, template.duration);
-        if (!options) {
-            showToast("Scheduling cancelled.", "info");
-            return;
-        }
-        
-        const occurrences = generateSchedulingDates(selectedDateStr, template.duration, options);
-        
-        const tasksToInsert = [];
-        const sameEvent = options.sameEvent;
-        const singleGroupId = sameEvent ? (Date.now().toString() + Math.random().toString(36).substring(2, 7)) : null;
-        
-        for (let i = 0; i < occurrences.length; i++) {
-            const runDates = occurrences[i];
-            const runGroupId = sameEvent ? singleGroupId : (runDates.length > 1 ? (Date.now().toString() + Math.random().toString(36).substring(2, 7)) : null);
-            
-            for (const d of runDates) {
-                tasksToInsert.push({
-                    date: d,
-                    task_name: template.task_name,
-                    duration: 'All Day',
-                    color: template.color,
-                    rosterType: currentRoster,
-                    abbreviation: template.abbreviation,
-                    category: template.category,
-                    notes: template.notes || null,
-                    group_id: runGroupId
-                });
-            }
-        }
-        
-        try {
-            const res = await fetch('/api/tasks/batch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tasks: tasksToInsert })
-            });
-            if (res.ok) {
-                showToast(`Template "${template.task_name}" applied successfully.`, "success");
-                loadAnnualData();
-            } else {
-                showToast("Failed to apply template.", "error");
-            }
-        } catch (err) {
-            console.error(err);
-            showToast("Network error applying template.", "error");
+            openDayModal(activeContextMenuDateStr, null, true, template.id);
         }
     }
 
